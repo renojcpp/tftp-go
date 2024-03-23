@@ -26,13 +26,27 @@ type tftpstruct interface {
 
 type Packet []byte
 
+func (p Packet) Type() HeaderId {
+	sl := bytes.NewReader(p[0:2])
+	enc := gob.NewDecoder(sl)
+	var h HeaderId
+
+	err := enc.Decode(&h)
+
+	if err != nil {
+		panic("Failed to read type")
+	}
+
+	return h
+}
+
 type RRQPacket struct {
 	Type     HeaderId
 	Filename string
 	Eos      uint8
 }
 
-func encode[K tftpstruct](t *K) Packet {
+func Encode[K tftpstruct](t *K) Packet {
 	b := new(bytes.Buffer)
 	enc := gob.NewEncoder(b)
 	err := enc.Encode(*t)
@@ -44,7 +58,7 @@ func encode[K tftpstruct](t *K) Packet {
 	return Packet(b.Bytes())
 }
 
-func decode[K tftpstruct](p Packet) K {
+func Decode[K tftpstruct](p Packet) K {
 	reader := bytes.NewReader(p)
 	dec := gob.NewDecoder(reader)
 	var s K
@@ -57,18 +71,18 @@ func decode[K tftpstruct](p Packet) K {
 	return s
 }
 
-func (r *RRQPacket) Packet() Packet {
-	return encode(r)
-}
-
 type WRQPacket struct {
 	Type     HeaderId
 	Filename string
 	Eos      uint8
 }
 
-func (w *WRQPacket) Packet() Packet {
-	return encode(w)
+func NewWRQPacket(s string) *WRQPacket {
+	return &WRQPacket{
+		WRQ,
+		s,
+		EOS,
+	}
 }
 
 type DATPacket struct {
@@ -78,8 +92,13 @@ type DATPacket struct {
 	Data  []byte
 }
 
-func (w *DATPacket) Packet() Packet {
-	return encode(w)
+func NewDATPacket(b, s uint32, data []byte) *DATPacket {
+	return &DATPacket{
+		DAT,
+		b,
+		s,
+		data,
+	}
 }
 
 type ACKPacket struct {
@@ -87,8 +106,11 @@ type ACKPacket struct {
 	Block uint32
 }
 
-func (a *ACKPacket) Packet() Packet {
-	return encode(a)
+func NewACKPacket(b uint32) *ACKPacket {
+	return &ACKPacket{
+		ACK,
+		b,
+	}
 }
 
 type ERRPacket struct {
@@ -97,36 +119,10 @@ type ERRPacket struct {
 	Eos       uint8
 }
 
-func (e *ERRPacket) Packet() Packet {
-	return encode(e)
-}
-
-// Type reads the type of packet from Packet.
-// The most significant bit of a packet is at the first,
-// so we must read the first two bytes.
-// CreateRRQ creates an RRQPacket from a generic Packet.
-
-func NewRRQ(p Packet) *RRQPacket {
-	r := decode[RRQPacket](p)
-	return &r
-}
-
-func NewWRQ(p Packet) *WRQPacket {
-	w := decode[WRQPacket](p)
-	return &w
-}
-
-func NewDAT(p Packet) *DATPacket {
-	d := decode[DATPacket](p)
-	return &d
-}
-
-func NewACK(p Packet) *ACKPacket {
-	a := decode[ACKPacket](p)
-	return &a
-}
-
-func NewERR(p Packet) *ERRPacket {
-	e := decode[ERRPacket](p)
-	return &e
+func NewERRPacket(s string) *ERRPacket {
+	return &ERRPacket{
+		ERR,
+		s,
+		EOS,
+	}
 }
