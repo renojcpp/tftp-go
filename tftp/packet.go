@@ -2,12 +2,12 @@ package tftp
 
 import (
 	"bytes"
-	"encoding/binary"
-	"fmt"
+	"encoding/gob"
 )
 
 type HeaderId uint16
 
+//go:generate stringer -Type=HeaderId
 const (
 	RRQ HeaderId = iota + 1
 	WRQ
@@ -20,123 +20,113 @@ const (
 	EOS uint8 = iota
 )
 
+type tftpstruct interface {
+	RRQPacket | WRQPacket | DATPacket | ACKPacket | ERRPacket
+}
+
 type Packet []byte
 
 type RRQPacket struct {
+	Type     HeaderId
 	Filename string
+	Eos      uint8
+}
+
+func encode[K tftpstruct](t *K) Packet {
+	b := new(bytes.Buffer)
+	enc := gob.NewEncoder(b)
+	err := enc.Encode(*t)
+
+	if err != nil {
+		panic("Failed to generate packet ")
+	}
+
+	return Packet(b.Bytes())
+}
+
+func decode[K tftpstruct](p Packet) K {
+	reader := bytes.NewReader(p)
+	dec := gob.NewDecoder(reader)
+	var s K
+	err := dec.Decode(&s)
+
+	if err != nil {
+		panic("Failed to decode packet")
+	}
+
+	return s
+}
+
+func (r *RRQPacket) Packet() Packet {
+	return encode(r)
 }
 
 type WRQPacket struct {
+	Type     HeaderId
 	Filename string
+	Eos      uint8
+}
+
+func (w *WRQPacket) Packet() Packet {
+	return encode(w)
 }
 
 type DATPacket struct {
+	Type  HeaderId
 	Block uint32
 	Size  uint32
 	Data  []byte
 }
 
+func (w *DATPacket) Packet() Packet {
+	return encode(w)
+}
+
 type ACKPacket struct {
+	Type  HeaderId
 	Block uint32
 }
 
+func (a *ACKPacket) Packet() Packet {
+	return encode(a)
+}
+
 type ERRPacket struct {
+	Type      HeaderId
 	Errstring string
+	Eos       uint8
+}
+
+func (e *ERRPacket) Packet() Packet {
+	return encode(e)
 }
 
 // Type reads the type of packet from Packet.
 // The most significant bit of a packet is at the first,
 // so we must read the first two bytes.
-func (p Packet) Type() HeaderId {
-	reader := bytes.NewReader(p[0:2])
-	var h HeaderId
-	err := binary.Read(reader, binary.BigEndian, &h)
-
-	if err != nil {
-		panic("Failed to read byte")
-	}
-
-	if h > 5 {
-		panic(fmt.Sprintf("Unknown type: %d", h))
-	}
-
-	return HeaderId(h)
-}
-
 // CreateRRQ creates an RRQPacket from a generic Packet.
-func CreateRRQ(p Packet) RRQPacket {
-	sl := p[2 : len(p)-1]
-	reader := bytes.NewReader(sl)
 
-	var name string
-
-	err := binary.Read(reader, binary.BigEndian, &name)
-
-	if err != nil {
-		panic("Failed to create RRQ packet")
-	}
-
-	return RRQPacket{
-		name,
-	}
-
+func NewRRQ(p Packet) *RRQPacket {
+	r := decode[RRQPacket](p)
+	return &r
 }
 
-func CreateWRQ(p Packet) WRQPacket {
-	sl := p[2 : len(p)-1]
-	reader := bytes.NewReader(sl)
-
-	var name string
-
-	err := binary.Read(reader, binary.BigEndian, &name)
-
-	if err != nil {
-		panic("Failed to create WRQ packet")
-	}
-
-	return WRQPacket{
-		name,
-	}
+func NewWRQ(p Packet) *WRQPacket {
+	w := decode[WRQPacket](p)
+	return &w
 }
 
-func CreateDAT(p Packet) DATPacket {
-	sl := p[2:]
-	reader := bytes.NewReader(sl)
-
-	var dat DATPacket
-	err := binary.Read(reader, binary.BigEndian, &dat)
-
-	if err != nil {
-		panic("Failed to create DAT packet")
-	}
-
-	return dat
+func NewDAT(p Packet) *DATPacket {
+	d := decode[DATPacket](p)
+	return &d
 }
 
-func CreateACK(p Packet) ACKPacket {
-	sl := p[2:]
-	reader := bytes.NewReader(sl)
-
-	var block uint32
-
-	err := binary.Read(reader, binary.BigEndian, &block)
-	if err != nil {
-		panic("Failed to create ACK packet")
-	}
-
-	return ACKPacket{block}
+func NewACK(p Packet) *ACKPacket {
+	a := decode[ACKPacket](p)
+	return &a
 }
 
-func CreateERR(p Packet) ERRPacket {
-	sl := p[2:]
-	reader := bytes.NewReader(sl)
-
-	var errstring string
-	err := binary.Read(reader, binary.BigEndian, &errstring)
-
-	if err != nil {
-		panic("Failed to create ERR packet")
-	}
-
-	return ERRPacket{errstring}
+func NewERR(p Packet) *ERRPacket {
+	e := decode[ERRPacket](p)
+	return &e
 }
