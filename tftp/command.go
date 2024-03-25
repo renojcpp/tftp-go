@@ -5,8 +5,32 @@ import (
 	"strings"
 )
 
-type command = string
+type command string
+
+func parseCommand(s string) (command, bool) {
+	switch strings.ToLower(s) {
+	case "get":
+		return Get, true
+	case "dir":
+		return Dir, true
+	case "put":
+		return Put, true
+	case "quit":
+		return Quit, true
+	default:
+		return Nil, false
+	}
+}
+
 type argument = string
+
+const (
+	Get  command = "get"
+	Dir          = "dir"
+	Put          = "put"
+	Quit         = "quit"
+	Nil          = ""
+)
 
 type Command struct {
 	command
@@ -14,23 +38,23 @@ type Command struct {
 }
 
 var commands = map[command]struct{}{
-	"get":  {},
-	"dir":  {},
-	"put":  {},
-	"quit": {},
+	Get:  {},
+	Dir:  {},
+	Put:  {},
+	Quit: {},
 }
 
 func readStatement(stmt string) (command, []argument, error) {
 	stmt = strings.TrimSpace(stmt)
 	words := strings.Fields(stmt)
 
-	_, ok := commands[words[0]]
+	cmd, ok := parseCommand(words[0])
 
 	if !ok {
 		return "", nil, errors.New("Unrecognized command " + words[0])
 	}
 
-	return words[0], words[1:], nil
+	return cmd, words[1:], nil
 }
 
 func readArguments(cmd command, args []argument) ([]argument, error) {
