@@ -22,7 +22,6 @@ const (
 
 type tftpstruct interface {
 	RRQPacket | WRQPacket | DATPacket | ACKPacket | ERRPacket
-	Opcode() HeaderId
 }
 
 type Packet []byte
@@ -41,16 +40,6 @@ func (p Packet) Type() (HeaderId, error) {
 	return h, nil
 }
 
-type RRQPacket struct {
-	Type     HeaderId
-	Filename string
-	Eos      uint8
-}
-
-func (r RRQPacket) Opcode() HeaderId {
-	return r.Type
-}
-
 func Encode[K tftpstruct](t *K) (Packet, error) {
 	b := new(bytes.Buffer)
 	enc := gob.NewEncoder(b)
@@ -63,7 +52,7 @@ func Encode[K tftpstruct](t *K) (Packet, error) {
 	return Packet(b.Bytes()), nil
 }
 
-func Decode[K tftpstruct](p Packet) (K, error) {
+func decode[K tftpstruct](p Packet) (K, error) {
 	reader := bytes.NewReader(p)
 	dec := gob.NewDecoder(reader)
 	var s K
@@ -76,14 +65,20 @@ func Decode[K tftpstruct](p Packet) (K, error) {
 	return s, nil
 }
 
-type WRQPacket struct {
+type RRQPacket struct {
 	Type     HeaderId
 	Filename string
 	Eos      uint8
 }
 
-func (w WRQPacket) Opcode() HeaderId {
-	return w.Type
+func NewRRQPacket(s string) *RRQPacket {
+	return (*RRQPacket)(NewWRQPacket(s))
+}
+
+type WRQPacket struct {
+	Type     HeaderId
+	Filename string
+	Eos      uint8
 }
 
 func NewWRQPacket(s string) *WRQPacket {
@@ -101,10 +96,6 @@ type DATPacket struct {
 	Data  []byte
 }
 
-func (d DATPacket) Opcode() HeaderId {
-	return d.Type
-}
-
 func NewDATPacket(b, s uint32, data []byte) *DATPacket {
 	return &DATPacket{
 		DAT,
@@ -119,10 +110,6 @@ type ACKPacket struct {
 	Block uint32
 }
 
-func (a ACKPacket) Opcode() HeaderId {
-	return a.Type
-}
-
 func NewACKPacket(b uint32) *ACKPacket {
 	return &ACKPacket{
 		ACK,
@@ -134,10 +121,6 @@ type ERRPacket struct {
 	Type      HeaderId
 	Errstring string
 	Eos       uint8
-}
-
-func (e ERRPacket) Opcode() HeaderId {
-	return e.Type
 }
 
 func NewERRPacket(s string) *ERRPacket {
