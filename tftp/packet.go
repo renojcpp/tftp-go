@@ -27,7 +27,7 @@ type tftpstruct interface {
 
 type Packet []byte
 
-func (p Packet) Type() HeaderId {
+func (p Packet) Type() (HeaderId, error) {
 	sl := bytes.NewReader(p[0:2])
 	enc := gob.NewDecoder(sl)
 	var h HeaderId
@@ -35,10 +35,10 @@ func (p Packet) Type() HeaderId {
 	err := enc.Decode(&h)
 
 	if err != nil {
-		panic("Failed to read type")
+		return 0, err
 	}
 
-	return h
+	return h, nil
 }
 
 type RRQPacket struct {
@@ -51,29 +51,29 @@ func (r RRQPacket) Opcode() HeaderId {
 	return r.Type
 }
 
-func Encode[K tftpstruct](t *K) Packet {
+func Encode[K tftpstruct](t *K) (Packet, error) {
 	b := new(bytes.Buffer)
 	enc := gob.NewEncoder(b)
 	err := enc.Encode(*t)
 
 	if err != nil {
-		panic("Failed to generate packet ")
+		return nil, err
 	}
 
-	return Packet(b.Bytes())
+	return Packet(b.Bytes()), nil
 }
 
-func Decode[K tftpstruct](p Packet) K {
+func Decode[K tftpstruct](p Packet) (K, error) {
 	reader := bytes.NewReader(p)
 	dec := gob.NewDecoder(reader)
 	var s K
 	err := dec.Decode(&s)
 
 	if err != nil {
-		panic("Failed to decode packet")
+		return s, err
 	}
 
-	return s
+	return s, nil
 }
 
 type WRQPacket struct {
