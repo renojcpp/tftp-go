@@ -2,7 +2,7 @@ package tftp
 
 import (
 	"bytes"
-	"encoding/gob"
+	"encoding/binary"
 )
 
 type HeaderId uint16
@@ -28,10 +28,9 @@ type Packet []byte
 
 func (p Packet) Type() (HeaderId, error) {
 	sl := bytes.NewReader(p[0:2])
-	enc := gob.NewDecoder(sl)
 	var h HeaderId
 
-	err := enc.Decode(&h)
+	err := binary.Read(sl, binary.BigEndian, h)
 
 	if err != nil {
 		return 0, err
@@ -42,8 +41,8 @@ func (p Packet) Type() (HeaderId, error) {
 
 func Encode[K tftpstruct](t *K) (Packet, error) {
 	b := new(bytes.Buffer)
-	enc := gob.NewEncoder(b)
-	err := enc.Encode(*t)
+
+	err := binary.Write(b, binary.BigEndian, t)
 
 	if err != nil {
 		return nil, err
@@ -54,9 +53,9 @@ func Encode[K tftpstruct](t *K) (Packet, error) {
 
 func decode[K tftpstruct](p Packet) (K, error) {
 	reader := bytes.NewReader(p)
-	dec := gob.NewDecoder(reader)
 	var s K
-	err := dec.Decode(&s)
+
+	err := binary.Read(reader, binary.BigEndian, s)
 
 	if err != nil {
 		return s, err
@@ -72,7 +71,9 @@ type RRQPacket struct {
 }
 
 func NewRRQPacket(s string) *RRQPacket {
-	return (*RRQPacket)(NewWRQPacket(s))
+	p := (*RRQPacket)(NewWRQPacket(s))
+	p.Type = RRQ
+	return p
 }
 
 type WRQPacket struct {
