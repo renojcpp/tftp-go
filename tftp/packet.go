@@ -25,6 +25,11 @@ type tftpstruct interface {
 }
 
 type Packet []byte
+type RRQPacket Packet
+type WRQPacket Packet
+type DATPacket Packet
+type ACKPacket Packet
+type ERRPacket Packet
 
 func (p Packet) Type() (HeaderId, error) {
 	sl := bytes.NewReader(p[0:2])
@@ -70,64 +75,97 @@ type RRQPacket struct {
 	Eos      uint8
 }
 
-func NewRRQPacket(s string) *RRQPacket {
-	p := (*RRQPacket)(NewWRQPacket(s))
-	p.Type = RRQ
-	return p
+func NewRRQPacket(s string) RRQPacket {
+	buf := new(bytes.Buffer)
+
+	d := []any{
+		RRQ,
+		s,
+		EOS,
+	}
+	for _, v := range d {
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			panic("failed to create ack packet")
+		}
+	}
+
+	return buf.Bytes()
 }
 
-type WRQPacket struct {
-	Type     HeaderId
-	Filename string
-	Eos      uint8
-}
-
-func NewWRQPacket(s string) *WRQPacket {
-	return &WRQPacket{
+func NewWRQPacket(s string) WRQPacket {
+	buf := new(bytes.Buffer)
+	d := []any{
 		WRQ,
 		s,
 		EOS,
 	}
+
+	for _, v := range d {
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			panic("failed to create ack packet")
+		}
+	}
+
+	return buf.Bytes()
+
 }
 
-type DATPacket struct {
-	Type  HeaderId
-	Block uint32
-	Size  uint32
-	Data  []byte
-}
+func NewDATPacket(b, s uint32, data []byte) DATPacket {
+	buf := new(bytes.Buffer)
 
-func NewDATPacket(b, s uint32, data []byte) *DATPacket {
-	return &DATPacket{
+	d := []any{
 		DAT,
 		b,
 		s,
 		data,
 	}
+
+	for _, v := range d {
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			panic("failed to create ack packet")
+		}
+	}
+
+	return buf.Bytes()
 }
 
-type ACKPacket struct {
-	Type  HeaderId
-	Block uint32
-}
+func NewACKPacket(b uint32) ACKPacket {
+	buf := new(bytes.Buffer)
 
-func NewACKPacket(b uint32) *ACKPacket {
-	return &ACKPacket{
+	d := []any{
 		ACK,
 		b,
 	}
+
+	for _, v := range d {
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			panic("failed to create ack packet")
+		}
+	}
+
+	return buf.Bytes()
 }
 
-type ERRPacket struct {
-	Type      HeaderId
-	Errstring string
-	Eos       uint8
-}
+func NewERRPacket(s string) ERRPacket {
+	buf := new(bytes.Buffer)
 
-func NewERRPacket(s string) *ERRPacket {
-	return &ERRPacket{
+	d := []any{
 		ERR,
 		s,
 		EOS,
 	}
+
+	for _, v := range d {
+		err := binary.Write(buf, binary.BigEndian, v)
+		if err != nil {
+			panic("failed to create ack packet")
+		}
+	}
+
+	return buf.Bytes()
+
 }
