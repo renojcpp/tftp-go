@@ -28,62 +28,46 @@ type Packet []byte
 type RRQPacket Packet
 type WRQPacket Packet
 type DATPacket Packet
+
+func (dat *DATPacket) Block() uint32 {
+	n, _ := binary.Uvarint((*dat)[2:6])
+
+	return uint32(n)
+}
+
+func (dat *DATPacket) Size() uint32 {
+	n, _ := binary.Uvarint((*dat)[6:10])
+
+	return uint32(n)
+}
+
+func (dat *DATPacket) Data() []byte {
+	return (*dat)[10:]
+}
+
 type ACKPacket Packet
+
+func (ack *ACKPacket) Block() uint32 {
+	n, _ := binary.Uvarint((*ack)[2:])
+
+	return uint32(n)
+}
+
 type ERRPacket Packet
 
-func (p Packet) Type() (HeaderId, error) {
-	sl := bytes.NewReader(p[0:2])
-	var h HeaderId
-
-	err := binary.Read(sl, binary.BigEndian, h)
-
-	if err != nil {
-		return 0, err
-	}
-
-	return h, nil
+func (errp *ERRPacket) Errstring() string {
+	return string((*errp)[2:])
 }
 
-func Encode[K tftpstruct](t *K) (Packet, error) {
-	b := new(bytes.Buffer)
-
-	err := binary.Write(b, binary.BigEndian, t)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return Packet(b.Bytes()), nil
+func (p Packet) Type() HeaderId {
+	n, _ := binary.Uvarint(p[0:2])
+	return HeaderId(n)
 }
 
-func decode[K tftpstruct](p Packet) (K, error) {
-	reader := bytes.NewReader(p)
-	var s K
-
-	err := binary.Read(reader, binary.BigEndian, s)
-
-	if err != nil {
-		return s, err
-	}
-
-	return s, nil
-}
-
-type RRQPacket struct {
-	Type     HeaderId
-	Filename string
-	Eos      uint8
-}
-
-func NewRRQPacket(s string) RRQPacket {
+func Encode(fields []any) Packet {
 	buf := new(bytes.Buffer)
 
-	d := []any{
-		RRQ,
-		s,
-		EOS,
-	}
-	for _, v := range d {
+	for _, v := range fields {
 		err := binary.Write(buf, binary.BigEndian, v)
 		if err != nil {
 			panic("failed to create ack packet")
@@ -93,28 +77,40 @@ func NewRRQPacket(s string) RRQPacket {
 	return buf.Bytes()
 }
 
-func NewWRQPacket(s string) WRQPacket {
-	buf := new(bytes.Buffer)
+func Decode[k ~[]byte](p k) ([]byte, error) {
+	reader := bytes.NewReader(p)
+	buf := make([]byte, len(p))
+
+	err := binary.Read(reader, binary.BigEndian, p)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+func EncodeRRQ(s string) Packet {
+	d := []any{
+		RRQ,
+		s,
+		EOS,
+	}
+	return Encode(d)
+}
+
+func EncodeWRQ(s string) Packet {
 	d := []any{
 		WRQ,
 		s,
 		EOS,
 	}
 
-	for _, v := range d {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			panic("failed to create ack packet")
-		}
-	}
-
-	return buf.Bytes()
+	return Encode(d)
 
 }
 
-func NewDATPacket(b, s uint32, data []byte) DATPacket {
-	buf := new(bytes.Buffer)
-
+func EncodeDAT(b, s uint32, data []byte) Packet {
 	d := []any{
 		DAT,
 		b,
@@ -122,50 +118,24 @@ func NewDATPacket(b, s uint32, data []byte) DATPacket {
 		data,
 	}
 
-	for _, v := range d {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			panic("failed to create ack packet")
-		}
-	}
-
-	return buf.Bytes()
+	return Encode(d)
 }
 
-func NewACKPacket(b uint32) ACKPacket {
-	buf := new(bytes.Buffer)
-
+func EncodeACK(b uint32) Packet {
 	d := []any{
 		ACK,
 		b,
 	}
 
-	for _, v := range d {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			panic("failed to create ack packet")
-		}
-	}
-
-	return buf.Bytes()
+	return Encode(d)
 }
 
-func NewERRPacket(s string) ERRPacket {
-	buf := new(bytes.Buffer)
-
+func EncodeWRR(s string) Packet {
 	d := []any{
 		ERR,
 		s,
 		EOS,
 	}
 
-	for _, v := range d {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			panic("failed to create ack packet")
-		}
-	}
-
-	return buf.Bytes()
-
+	return Encode(d)
 }
