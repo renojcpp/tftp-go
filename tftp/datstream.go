@@ -7,19 +7,16 @@ type DATStream struct {
 	ptr   int
 }
 
-func (d *DATStream) Next() (DATPacket, error) {
+func (d *DATStream) Next() DATPacket {
 	// read at most 512 bytes at a time
 	end := min(len(d.src)-d.ptr, d.ptr+512)
 	slice := d.src[d.ptr:end]
 
-	dat, err := NewDATPacket(d.block, uint32(len(slice)), slice)
-	if err != nil {
-		return nil, err
-	}
+	dat := EncodeDAT(d.block, uint32(len(slice)), slice)
 
 	d.block += 1
 	d.ptr = end
-	return dat, nil
+	return DATPacket(dat)
 }
 
 func NewDATStream(src []byte) *DATStream {
