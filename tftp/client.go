@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 )
 
 type cstatus int
@@ -68,15 +69,14 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 			return nil, err
 		}
 
-		packet := Packet(dec)
 		var ackn uint32 = 1
-		switch packet.Type() {
+		switch dec.Type() {
 		case DAT:
 			if err != nil {
 				return nil, err
 			}
 
-			dat := DATPacket(packet)
+			dat := DATPacket(dec)
 
 			if len(dat.Data()) > 512 {
 				return nil, errors.New("too bytes of data on DAT Packet")
@@ -96,7 +96,7 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 
 			buffer.Write(dat.Data())
 		case ERR:
-			errp := ERRPacket(packet)
+			errp := ERRPacket(dec)
 
 			return nil, errors.New(errp.Errstring())
 		default:
@@ -199,13 +199,42 @@ func (c *Client) get(args []argument) error {
 		filename = args[1]
 	}
 
+	file, err := os.Create(filename)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(rawbytes)
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (c *Client) put(args []argument) error {
 	// read the file
+	buf, err := os.ReadFile(args[0])
+
+	if err != nil {
+		return err
+	}
+
+	filename := args[0]
+	if len(args) == 2 {
+		filename = args[1]
+	}
 
 	// send bytes of the file
+	err = c.WriteWriteRequest(filename, buf)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *Client) dir() error {
@@ -219,7 +248,41 @@ func (c *Client) dir() error {
 	return nil
 }
 
-func (c *Client) handshake() error {
+func (c *Client) Handshake() error {
+	resp, err := io.ReadAll(c)
+
+	if err != nil {
+		return nil
+	}
+
+	decoded, err := Decode(resp)
+
+	if err != nil {
+		return nil
+	}
+
+	packet := Packet(decoded)
+
+	switch packet.Type() {
+	case DAT:
+		dat := DATPacket(packet)
+
+		if dat.Block() != 1 {
+			return fmt.Errorf("Unexpected block number: %d", dat.Block())
+		}
+
+		ack := EncodeACK(1)
+
+		_, err := c.Write(ack)
+
+		if err != nil {
+			return err
+		}
+		return nil
+	default:
+		return errors.New("unexpected header")
+	}
+
 }
 
 func NewClient(hostname string, port int) (*Client, error) {
@@ -231,13 +294,5 @@ func NewClient(hostname string, port int) (*Client, error) {
 
 	c := &Client{conn, ok}
 
-	if err := c.handshake(); err != nil {
-		return nil, err
-	}
-
 	return c, nil
-}
-
-func WrapConnection(n *net.Conn) *Client {
-	return &Client{*n, ok}
 }
