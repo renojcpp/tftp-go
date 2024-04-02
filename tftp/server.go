@@ -1,10 +1,10 @@
 package tftp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 )
@@ -12,13 +12,25 @@ import (
 // todo: need to send errpackets
 
 type ServerConnection struct {
-	net.Conn
+	conn       net.Conn
+	readWriter bufio.ReadWriter
+	id         int
+}
+
+func NewTFTPConnection(c net.Conn, id int) *ServerConnection {
+	writer := bufio.NewWriter(c)
+	reader := bufio.NewReader(c)
+	return &ServerConnection{
+		c,
+		*bufio.NewReadWriter(reader, writer),
+		id,
+	}
 }
 
 func (s ServerConnection) SendError(str string) {
 	errp := EncodeWRR(str)
 
-	_, err := s.Write(errp)
+	_, err := s.conn.Write(errp)
 
 	if err != nil {
 		panic("Failed to send error")
@@ -39,14 +51,14 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 
 	for !done {
 		ack := EncodeACK(ackn)
-		_, err := s.Write(ack)
+		_, err := s.conn.Write(ack)
 
 		if err != nil {
 			return err
 		}
 
 		ackn += 1
-		resp, err := io.ReadAll(s)
+		resp, err := s.readWriter.ReadBytes('\000')
 
 		if err != nil {
 			return err
@@ -93,12 +105,12 @@ func (s ServerConnection) Handshake() error {
 	msg := "Hello!"
 	packet := EncodeDAT(1, uint32(len(msg)), []byte(msg))
 
-	_, err := s.Write(packet)
+	_, err := s.conn.Write(packet)
 	if err != nil {
 		return err
 	}
 
-	resp, err := io.ReadAll(s)
+	resp, err := s.readWriter.ReadBytes('\000')
 	if err != nil {
 		return err
 	}
@@ -146,7 +158,7 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 	var blockn uint32 = 1
 	for !done {
 		next := stream.Next()
-		_, err := s.Write(next)
+		_, err := s.conn.Write(next)
 
 		if err != nil {
 			return nil
@@ -156,7 +168,7 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 			done = true
 		}
 
-		resp, err := io.ReadAll(s)
+		resp, err := s.readWriter.ReadBytes('\000')
 		if err != nil {
 			return nil
 		}
@@ -184,4 +196,30 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 	}
 
 	return nil
+}
+
+func (s ServerConnection) NextRequest() {
+	for {
+		req, err := s.readWriter.ReadBytes('\000')
+		if err != nil {
+			break
+		}
+
+		decoded, err := Decode(req)
+		switch decoded.Type() {
+		case RRQ:
+			rrq := RRQPacket(decoded)
+			err = s.ReadReadRequest(rrq.Filename())
+			if err != nil {
+				// do something
+			}
+		case WRQ:
+			wrq := WRQPacket(decoded)
+			err = s.ReadWriteRequest(wrq.Filename())
+		default:
+			fmt.Fprintf(os.Stderr, "Unexpected block %d", decoded.Type())
+		}
+	}
+
+	s.conn.Close()
 }

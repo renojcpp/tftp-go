@@ -1,10 +1,10 @@
 package tftp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 )
@@ -18,7 +18,8 @@ const (
 )
 
 type Client struct {
-	net.Conn
+	conn   net.Conn
+	reader bufio.Reader
 	status cstatus
 }
 
@@ -38,17 +39,17 @@ func (client *Client) Command(c *Command) error {
 }
 
 func (c *Client) quit() error {
-	return c.Close()
+	return c.conn.Close()
 }
 
 // WriteReadRequest creates an RRQ packet with a filename argument then
 // conducts back and forth delivery of ACK and DAT packets with the server.
 // Code can be refactored to share code with WriteWRQStream
 func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
-	rrq := EncodeRRQ(filename)
+	rrq := EncodeRRQ(filename + string('\000'))
 
 	// may need to do something extra about this
-	_, err := c.Write(rrq)
+	_, err := c.conn.Write(rrq)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +59,12 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 	done := false
 	for !done {
 		// read data
-		resp, err := io.ReadAll(c)
+		resp, err := c.reader.ReadBytes('\000')
 
 		if err != nil {
 			return nil, err
 		}
+
 		dec, err := Decode(resp)
 
 		if err != nil {
@@ -72,10 +74,6 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 		var ackn uint32 = 1
 		switch dec.Type() {
 		case DAT:
-			if err != nil {
-				return nil, err
-			}
-
 			dat := DATPacket(dec)
 
 			if len(dat.Data()) > 512 {
@@ -105,11 +103,7 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 
 		ack := EncodeACK(ackn)
 
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = c.Write(ack)
+		_, err = c.conn.Write(ack)
 		if err != nil {
 			return nil, err
 		}
@@ -124,9 +118,9 @@ func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
 // conducts back and forth transfer of DAT packets with filestream data with
 // receiving ACK packets. Code can be reused with WriteRRQStream.
 func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
-	wrq := EncodeWRQ(filename)
+	wrq := EncodeWRQ(filename + string('\000'))
 
-	_, err := c.Write(wrq)
+	_, err := c.conn.Write(wrq)
 
 	if err != nil {
 		return err
@@ -136,7 +130,7 @@ func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
 	done := false
 	for !done {
 		// read ack
-		resp, err := io.ReadAll(c)
+		resp, err := c.reader.ReadBytes('\000')
 
 		if err != nil {
 			return err
@@ -160,10 +154,6 @@ func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
 		case ERR:
 			e := ERRPacket(packet)
 
-			if err != nil {
-				return err
-			}
-
 			return errors.New(e.Errstring())
 		default:
 			return errors.New("Unknown packet received ")
@@ -171,7 +161,7 @@ func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
 
 		dat := stream.Next()
 
-		_, err = c.Write(dat)
+		_, err = c.conn.Write(dat)
 
 		if err != nil {
 			return err
@@ -249,7 +239,7 @@ func (c *Client) dir() error {
 }
 
 func (c *Client) Handshake() error {
-	resp, err := io.ReadAll(c)
+	resp, err := c.reader.ReadBytes('\000')
 
 	if err != nil {
 		return nil
@@ -273,7 +263,7 @@ func (c *Client) Handshake() error {
 
 		ack := EncodeACK(1)
 
-		_, err := c.Write(ack)
+		_, err := c.conn.Write(ack)
 
 		if err != nil {
 			return err
@@ -292,7 +282,7 @@ func NewClient(hostname string, port int) (*Client, error) {
 		return nil, err
 	}
 
-	c := &Client{conn, ok}
+	c := &Client{conn, *bufio.NewReader(conn), ok}
 
 	return c, nil
 }
