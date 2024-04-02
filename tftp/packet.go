@@ -26,7 +26,19 @@ type tftpstruct interface {
 
 type Packet []byte
 type RRQPacket Packet
+
+func (rrq *RRQPacket) Filename() string {
+	return string((*rrq)[2 : len(*rrq)-1])
+}
+
 type WRQPacket Packet
+
+func (wrq *WRQPacket) Filename() string {
+	cast := (*RRQPacket)(wrq)
+
+	return cast.Filename()
+}
+
 type DATPacket Packet
 
 func (dat *DATPacket) Block() uint32 {
@@ -77,7 +89,7 @@ func Encode(fields []any) Packet {
 	return buf.Bytes()
 }
 
-func Decode[k ~[]byte](p k) ([]byte, error) {
+func Decode[k ~[]byte](p k) (Packet, error) {
 	reader := bytes.NewReader(p)
 	buf := make([]byte, len(p))
 
