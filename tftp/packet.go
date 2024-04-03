@@ -3,6 +3,7 @@ package tftp
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 )
 
 type HeaderId uint16
@@ -28,7 +29,9 @@ type Packet []byte
 type RRQPacket Packet
 
 func (rrq *RRQPacket) Filename() string {
-	return string((*rrq)[2 : len(*rrq)-1])
+	var ss strings.Builder
+	binary.Write(&ss, binary.BigEndian, (*rrq)[2:len(*rrq)-1])
+	return ss.String()
 }
 
 type WRQPacket Packet
@@ -42,15 +45,14 @@ func (wrq *WRQPacket) Filename() string {
 type DATPacket Packet
 
 func (dat *DATPacket) Block() uint32 {
-	n, _ := binary.Uvarint((*dat)[2:6])
-
-	return uint32(n)
+	n := binary.BigEndian.Uint32((*dat)[2:6])
+	return n
 }
 
 func (dat *DATPacket) Size() uint32 {
-	n, _ := binary.Uvarint((*dat)[6:10])
+	n := binary.BigEndian.Uint32((*dat)[6:10])
 
-	return uint32(n)
+	return n
 }
 
 func (dat *DATPacket) Data() []byte {
@@ -60,19 +62,23 @@ func (dat *DATPacket) Data() []byte {
 type ACKPacket Packet
 
 func (ack *ACKPacket) Block() uint32 {
-	n, _ := binary.Uvarint((*ack)[2:])
+	n := binary.BigEndian.Uint32((*ack)[2:])
 
-	return uint32(n)
+	return n
 }
 
 type ERRPacket Packet
 
 func (errp *ERRPacket) Errstring() string {
-	return string((*errp)[2:])
+	var ss strings.Builder
+	binary.Write(&ss, binary.BigEndian, (*errp)[2:])
+
+	return ss.String()
 }
 
 func (p Packet) Type() HeaderId {
-	n, _ := binary.Uvarint(p[0:2])
+	n := binary.LittleEndian.Uint16(p[0:2])
+
 	return HeaderId(n)
 }
 
@@ -89,23 +95,23 @@ func Encode(fields []any) Packet {
 	return buf.Bytes()
 }
 
-func Decode[k ~[]byte](p k) (Packet, error) {
-	reader := bytes.NewReader(p)
-	buf := make([]byte, len(p))
+// func Decode[k ~[]byte](p k) Packet {
+// 	reader := bytes.NewReader(p)
+// 	buf := make([]byte, len(p))
 
-	err := binary.Read(reader, binary.BigEndian, p)
+// 	err := binary.Read(reader, binary.BigEndian, p)
 
-	if err != nil {
-		return nil, err
-	}
+// 	if err != nil {
+// 		return nil
+// 	}
 
-	return buf, nil
-}
+// 	return buf
+// }
 
 func EncodeRRQ(s string) Packet {
 	d := []any{
 		RRQ,
-		s,
+		s + string("\000"),
 		EOS,
 	}
 	return Encode(d)
@@ -114,7 +120,7 @@ func EncodeRRQ(s string) Packet {
 func EncodeWRQ(s string) Packet {
 	d := []any{
 		WRQ,
-		s,
+		s + string("\000"),
 		EOS,
 	}
 
@@ -142,10 +148,10 @@ func EncodeACK(b uint32) Packet {
 	return Encode(d)
 }
 
-func EncodeWRR(s string) Packet {
+func EncodeErr(s string) Packet {
 	d := []any{
 		ERR,
-		s,
+		s + string("\000"),
 		EOS,
 	}
 

@@ -3,8 +3,10 @@ package tftp
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -45,80 +47,67 @@ func (c *Client) quit() error {
 // WriteReadRequest creates an RRQ packet with a filename argument then
 // conducts back and forth delivery of ACK and DAT packets with the server.
 // Code can be refactored to share code with WriteWRQStream
-func (c *Client) WriteReadRequest(filename string) ([]byte, error) {
-	rrq := EncodeRRQ(filename + string('\000'))
+func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
+	rrq := EncodeRRQ(filename)
 
 	// may need to do something extra about this
 	_, err := c.conn.Write(rrq)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	buffer := new(bytes.Buffer)
+	buf := make([]byte, 1024)
 
 	done := false
 	for !done {
 		// read data
-		resp, err := c.reader.ReadBytes('\000')
-
+		n, err := c.reader.Read(buf)
+		slice := buf[:n]
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		dec, err := Decode(resp)
-
-		if err != nil {
-			return nil, err
-		}
+		dec := Packet(slice)
 
 		var ackn uint32 = 1
 		switch dec.Type() {
 		case DAT:
-			dat := DATPacket(dec)
-
-			if len(dat.Data()) > 512 {
-				return nil, errors.New("too bytes of data on DAT Packet")
+			done, err = HandleDAT(slice, ackn)
+			if err != nil {
+				return err
 			}
 
-			if dat.Size() != uint32(len(dat.Data())) {
-				return nil, errors.New("Size header reporting incorrect ")
-			}
+			p := DATPacket(dec)
+			err = binary.Write(w, binary.NativeEndian, p.Data())
 
-			if len(dat.Data()) < 512 {
-				done = true
+			if err != nil {
+				return err
 			}
-
-			if dat.Block() != ackn {
-				return nil, fmt.Errorf("Unexpected block data %d", ackn)
-			}
-
-			buffer.Write(dat.Data())
 		case ERR:
 			errp := ERRPacket(dec)
 
-			return nil, errors.New(errp.Errstring())
+			return errors.New(errp.Errstring())
 		default:
-			return nil, errors.New("Unknown packet received")
+			return errors.New("Unknown packet received")
 		}
 
 		ack := EncodeACK(ackn)
-
 		_, err = c.conn.Write(ack)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		ackn += 1
 	}
 
-	return buffer.Bytes(), nil
+	return nil
 }
 
 // WriteWriteRequest creates an WRQPacket with the specified filename and
 // conducts back and forth transfer of DAT packets with filestream data with
 // receiving ACK packets. Code can be reused with WriteRRQStream.
-func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
-	wrq := EncodeWRQ(filename + string('\000'))
+func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
+	wrq := EncodeWRQ(filename)
 
 	_, err := c.conn.Write(wrq)
 
@@ -126,40 +115,36 @@ func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
 		return err
 	}
 
-	stream := NewDATStream(filestream)
+	stream := NewDATStream(r)
+	buf := make([]byte, 512)
 	done := false
 	for !done {
 		// read ack
-		resp, err := c.reader.ReadBytes('\000')
+		n, err := c.reader.Read(buf)
 
 		if err != nil {
 			return err
 		}
 
-		dec, err := Decode(resp)
+		resp := buf[:n]
 
-		if err != nil {
-			return err
-		}
-
+		dec := Packet(resp)
 		var ackn uint32 = 0
-		packet := Packet(dec)
-		switch packet.Type() {
+		switch dec.Type() {
 		case ACK:
-			ack := ACKPacket(packet)
+			ack := ACKPacket(dec)
 			if ack.Block() != ackn {
 				return fmt.Errorf("Unexpected block error %d", ackn)
 			}
-
 		case ERR:
-			e := ERRPacket(packet)
+			e := ERRPacket(dec)
 
 			return errors.New(e.Errstring())
 		default:
 			return errors.New("Unknown packet received ")
 		}
 
-		dat := stream.Next()
+		dat, err := stream.Next()
 
 		_, err = c.conn.Write(dat)
 
@@ -177,25 +162,20 @@ func (c *Client) WriteWriteRequest(filename string, filestream []byte) error {
 // get runs the get command, which involves file transfer
 // from a server
 func (c *Client) get(args []argument) error {
-	rawbytes, err := c.WriteReadRequest(args[0])
-	if err != nil {
-		return err
-	}
-
-	// write the bytes to a file
 	filename := args[0]
 
 	if len(args) == 2 {
 		filename = args[1]
 	}
 
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	defer file.Close()
 
 	if err != nil {
 		return err
 	}
 
-	_, err = file.Write(rawbytes)
+	err = c.WriteReadRequest(file, args[0])
 
 	if err != nil {
 		return err
@@ -206,7 +186,7 @@ func (c *Client) get(args []argument) error {
 
 func (c *Client) put(args []argument) error {
 	// read the file
-	buf, err := os.ReadFile(args[0])
+	file, err := os.Open(args[0])
 
 	if err != nil {
 		return err
@@ -218,7 +198,7 @@ func (c *Client) put(args []argument) error {
 	}
 
 	// send bytes of the file
-	err = c.WriteWriteRequest(filename, buf)
+	err = c.WriteWriteRequest(file, filename)
 
 	if err != nil {
 		return err
@@ -228,41 +208,34 @@ func (c *Client) put(args []argument) error {
 }
 
 func (c *Client) dir() error {
-	output, err := c.WriteReadRequest("")
+	err := c.WriteReadRequest(os.Stdout, "")
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%s\n", output)
 	return nil
 }
 
 func (c *Client) Handshake() error {
-	resp, err := c.reader.ReadBytes('\000')
+	var b bytes.Buffer
+	_, err := c.reader.WriteTo(&b)
 
 	if err != nil {
-		return nil
+		return err
 	}
 
-	decoded, err := Decode(resp)
+	decoded := Packet(b.Bytes())
 
-	if err != nil {
-		return nil
-	}
-
-	packet := Packet(decoded)
-
-	switch packet.Type() {
+	switch decoded.Type() {
 	case DAT:
-		dat := DATPacket(packet)
+		dat := DATPacket(decoded)
 
 		if dat.Block() != 1 {
 			return fmt.Errorf("Unexpected block number: %d", dat.Block())
 		}
 
 		ack := EncodeACK(1)
-
 		_, err := c.conn.Write(ack)
 
 		if err != nil {

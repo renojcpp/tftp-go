@@ -3,8 +3,10 @@ package tftp
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -28,7 +30,7 @@ func NewTFTPConnection(c net.Conn, id int) *ServerConnection {
 }
 
 func (s ServerConnection) SendError(str string) {
-	errp := EncodeWRR(str)
+	errp := EncodeErr(str)
 
 	_, err := s.conn.Write(errp)
 
@@ -38,17 +40,16 @@ func (s ServerConnection) SendError(str string) {
 }
 
 func (s ServerConnection) ReadWriteRequest(filename string) error {
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 
+	defer file.Close()
 	if err != nil {
 		return err
 	}
 
-	defer file.Close()
-	var buf bytes.Buffer
 	var ackn uint32 = 0
 	done := false
-
+	buf := make([]byte, 1024)
 	for !done {
 		ack := EncodeACK(ackn)
 		_, err := s.conn.Write(ack)
@@ -58,44 +59,30 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 		}
 
 		ackn += 1
-		resp, err := s.readWriter.ReadBytes('\000')
-
+		n, err := s.readWriter.Read(buf)
+		slice := buf[:n]
 		if err != nil {
 			return err
 		}
 
-		decoded := Packet(resp)
+		decoded := Packet(slice)
 
 		switch decoded.Type() {
 		case DAT:
-			dat := DATPacket(decoded)
-
-			if dat.Block() != ackn {
-				s.SendError(fmt.Sprintf("Unrecognized block %d", dat.Block()))
-				return fmt.Errorf("unrecognized block %d", dat.Block())
+			done, err = HandleDAT(decoded, ackn)
+			if err != nil {
+				return err
 			}
-
-			if dat.Size() != uint32(len(dat.Data())) {
-				errs := "Inconsistent data sizes"
-				s.SendError(errs)
-				return errors.New(errs)
+			d := DATPacket(decoded)
+			err = binary.Write(file, binary.NativeEndian, d.Data())
+			if err != nil {
+				return err
 			}
-
-			if dat.Size() < 512 {
-				done = true
-			}
-
-			buf.Write(dat)
 		default:
 			errs := "Unexpected header"
 			s.SendError(errs)
 			return errors.New(errs)
 		}
-	}
-
-	_, err = file.Write(buf.Bytes())
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -110,16 +97,13 @@ func (s ServerConnection) Handshake() error {
 		return err
 	}
 
-	resp, err := s.readWriter.ReadBytes('\000')
+	var resp bytes.Buffer
+	_, err = s.readWriter.WriteTo(&resp)
 	if err != nil {
 		return err
 	}
 
-	decode, err := Decode(resp)
-
-	if err != nil {
-		return err
-	}
+	decode := Packet(resp.Bytes())
 
 	switch decode.Type() {
 	case ACK:
@@ -152,32 +136,30 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 		buf.Write(file)
 	}
 
-	stream := NewDATStream(buf.Bytes())
+	stream := NewDATStream(&buf)
 
 	done := false
 	var blockn uint32 = 1
+	readbuf := make([]byte, 512)
 	for !done {
-		next := stream.Next()
-		_, err := s.conn.Write(next)
+		next, err := stream.Next()
+		_, err = s.conn.Write(next)
 
 		if err != nil {
-			return nil
+			return err
 		}
 
 		if len(next.Data()) < 512 {
 			done = true
 		}
 
-		resp, err := s.readWriter.ReadBytes('\000')
+		n, err := s.readWriter.Read(readbuf)
+		resp := readbuf[:n]
 		if err != nil {
-			return nil
+			return err
 		}
 
-		decoded, err := Decode(resp)
-
-		if err != nil {
-			return nil
-		}
+		decoded := Packet(resp)
 
 		switch decoded.Type() {
 		case ACK:
@@ -202,10 +184,13 @@ func (s ServerConnection) NextRequest() {
 	for {
 		req, err := s.readWriter.ReadBytes('\000')
 		if err != nil {
+			if err == io.EOF {
+				fmt.Fprintf(os.Stdout, "Connection closed")
+			}
 			break
 		}
 
-		decoded, err := Decode(req)
+		decoded := Packet(req)
 		switch decoded.Type() {
 		case RRQ:
 			rrq := RRQPacket(decoded)
@@ -217,7 +202,7 @@ func (s ServerConnection) NextRequest() {
 			wrq := WRQPacket(decoded)
 			err = s.ReadWriteRequest(wrq.Filename())
 		default:
-			fmt.Fprintf(os.Stderr, "Unexpected block %d", decoded.Type())
+			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
 		}
 	}
 
