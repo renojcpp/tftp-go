@@ -62,17 +62,17 @@ func readArguments(cmd command, args []argument) ([]argument, error) {
 	case "dir", "quit":
 		return nil, nil
 	case "get", "put":
-		if len(args) > 2 {
-			return args[0:2], errors.ErrUnsupported
+		if len(args) > 1 {
+			return args[0:1], errors.ErrUnsupported
 		}
-		return args[0:2], nil
+		return args[0:1], nil
 	default:
 		return nil, errors.ErrUnsupported
 	}
 }
 
 func NewCommand(stmt string) (*Command, error) {
-	cmd, args, err := readStatement(strings.ToLower(stmt))
+	cmd, args, err := readStatement(stmt)
 
 	if err != nil {
 		return nil, err

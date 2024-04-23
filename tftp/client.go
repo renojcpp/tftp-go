@@ -23,6 +23,7 @@ type Client struct {
 	conn   net.Conn
 	reader bufio.Reader
 	status cstatus
+	encryption *EncryptionManager 
 }
 
 func (client *Client) Command(c *Command) error {
@@ -51,28 +52,33 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	rrq := EncodeRRQ(filename)
 
 	// may need to do something extra about this
-	_, err := c.conn.Write(rrq)
+	err := SendPacket(c.conn, rrq)
 	if err != nil {
 		return err
 	}
 
-	buf := make([]byte, 1024)
+	// buf := make([]byte, 1024)
 
 	done := false
 	for !done {
 		// read data
-		n, err := c.reader.Read(buf)
-		slice := buf[:n]
+		// n, err := c.reader.Read(buf)
+		// slice := buf[:n]
+		// if err != nil {
+		// 	return err
+		// }
+
+		// dec := Packet(slice)
+
+		dec, err := ReceivePacket(&c.reader)
 		if err != nil {
 			return err
 		}
 
-		dec := Packet(slice)
-
 		var ackn uint32 = 1
 		switch dec.Type() {
 		case DAT:
-			done, err = HandleDAT(slice, ackn)
+			done, err = HandleDAT(dec, ackn)
 			if err != nil {
 				return err
 			}
@@ -92,7 +98,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		}
 
 		ack := EncodeACK(ackn)
-		_, err = c.conn.Write(ack)
+		err = SendPacket(c.conn, ack)
 		if err != nil {
 			return err
 		}
@@ -108,7 +114,6 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 // receiving ACK packets. Code can be reused with WriteRRQStream.
 func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	wrq := EncodeWRQ(filename)
-
 	_, err := c.conn.Write(wrq)
 
 	if err != nil {
@@ -119,12 +124,11 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	buf := make([]byte, 512)
 	done := false
 	for !done {
-		// read ack
 		n, err := c.reader.Read(buf)
-
 		if err != nil {
 			return err
 		}
+
 
 		resp := buf[:n]
 
@@ -136,9 +140,10 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			if ack.Block() != ackn {
 				return fmt.Errorf("Unexpected block error %d", ackn)
 			}
+			fmt.Println("Acknowledge received")
 		case ERR:
 			e := ERRPacket(dec)
-
+			
 			return errors.New(e.Errstring())
 		default:
 			return errors.New("Unknown packet received ")
@@ -151,9 +156,12 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 		if err != nil {
 			return err
 		}
+		fmt.Println("Data packet written to file")
+
 
 		if len(dat.Data()) < 512 {
 			done = true
+			fmt.Println("End of data stream")
 		}
 	}
 	return nil
@@ -250,12 +258,94 @@ func (c *Client) Handshake() error {
 
 func NewClient(hostname string, port int) (*Client, error) {
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
-
 	if err != nil {
 		return nil, err
 	}
 
-	c := &Client{conn, *bufio.NewReader(conn), ok}
+	encryption, err := NewEncryptionManager()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{conn, *bufio.NewReader(conn), ok, encryption}
 
 	return c, nil
 }
+
+func (client *Client) ConnectionIsNotOpen() bool{
+	_, err := client.conn.Write([]byte{0})  //Test Byte
+	if err != nil {
+		return true
+	}
+	return false 
+}
+
+func(client *Client) ExchangeKeys() error{
+	fmt.Println("Exchanging Public Key")
+
+	keyRQ := EncodeKeyRQ()
+	fmt.Println("Client Bytes:", keyRQ)
+	_, err := client.conn.Write(keyRQ)
+	if err != nil {
+		return err
+	}
+
+	publicKeyPEM := []byte{}
+	tempBuffer := make([]byte, 256)
+	for {
+		n, err := client.reader.Read(tempBuffer) 
+		if err != nil {
+			return fmt.Errorf("failed to read server public key: %w", err)
+		}
+
+		publicKeyPEM = append(publicKeyPEM, tempBuffer[:n]...)
+
+		if bytes.HasSuffix(publicKeyPEM, []byte("\n")) {
+			break
+		}
+	}
+	
+	if err := client.CompleteKeyExchange(publicKeyPEM); err != nil {
+		return fmt.Errorf("key exchange failed: %w", err)
+	}
+
+	fmt.Println("Key Succesfully exchanged")
+	return nil
+}
+
+
+func RunClientLoop(client *Client) error {
+	err := client.ExchangeKeys()
+	if err != nil{
+		fmt.Println("Error exchanging keys: ", err)
+		return err
+	}
+    fmt.Println("TFTP Client: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
+    scanner := bufio.NewScanner(os.Stdin)
+
+    for {
+        fmt.Print("client> ")
+        if !scanner.Scan() {
+            break 
+        }
+
+        input := scanner.Text()
+        command, err := NewCommand(input) 
+        if err != nil {
+            fmt.Println("Invalid command:", err)
+            continue 
+        }
+
+        err = client.Command(command)
+        if err != nil {
+            fmt.Println("Error executing command:", err)
+        }
+
+		if client.ConnectionIsNotOpen(){
+			fmt.Println("Connection Terminated")
+			break
+		}
+    }
+	return nil
+}
+
