@@ -179,6 +179,6 @@ func EncodeKeyRQ() Packet {
 }
 
 
-func SendPacket(packet Packet) error {
-	
-}
+// func SendPacket(packet Packet) error {
+
+// }
