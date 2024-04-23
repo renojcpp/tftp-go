@@ -52,28 +52,33 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	rrq := EncodeRRQ(filename)
 
 	// may need to do something extra about this
-	_, err := c.conn.Write(rrq)
+	err := SendPacket(c.conn, rrq)
 	if err != nil {
 		return err
 	}
 
-	buf := make([]byte, 1024)
+	// buf := make([]byte, 1024)
 
 	done := false
 	for !done {
 		// read data
-		n, err := c.reader.Read(buf)
-		slice := buf[:n]
+		// n, err := c.reader.Read(buf)
+		// slice := buf[:n]
+		// if err != nil {
+		// 	return err
+		// }
+
+		// dec := Packet(slice)
+
+		dec, err := ReceivePacket(&c.reader)
 		if err != nil {
 			return err
 		}
 
-		dec := Packet(slice)
-
 		var ackn uint32 = 1
 		switch dec.Type() {
 		case DAT:
-			done, err = HandleDAT(slice, ackn)
+			done, err = HandleDAT(dec, ackn)
 			if err != nil {
 				return err
 			}
@@ -93,7 +98,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		}
 
 		ack := EncodeACK(ackn)
-		_, err = c.conn.Write(ack)
+		err = SendPacket(c.conn, ack)
 		if err != nil {
 			return err
 		}

@@ -213,7 +213,6 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 	for !done {
 		next, err := stream.Next()
 		_, err = s.conn.Write(next)
-
 		if err != nil {
 			return err
 		}
