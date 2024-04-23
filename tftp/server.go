@@ -9,7 +9,11 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/user"
 	"log"
+	"time"
+	"syscall"
+	"strings"
 )
 
 // todo: need to send errpackets
@@ -115,6 +119,54 @@ func (s ServerConnection) Handshake() error {
 	}
 }
 
+func returnUserIdentifiers(fileInfo os.FileInfo) (string, string){
+	//might not work on all operating systems if encountering windows problems
+	//comment out the use of this function and its returns in RRQ function
+
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		log.Fatal("Failed to extract file system info")
+	}	
+	uid := stat.Uid 
+	gid := stat.Gid 
+	userInfo, err := user.LookupId(fmt.Sprintf("%d", uid))
+	if err != nil {
+		log.Fatal("Error looking up user:", err)
+	}
+
+	groupInfo, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
+	if err != nil {
+		log.Fatal("Error looking up group:", err)
+	}
+
+	return userInfo.Username, groupInfo.Name
+}
+
+func buildDirectoryListing(file os.DirEntry) (string, error){
+	var builder strings.Builder
+
+	info, err := os.Stat(file.Name()) // Info provides additional file metadata
+	if err != nil {
+		fmt.Println("Error accessing file:", err)
+		return "", err
+	}
+	builder.WriteString(info.Mode().String())
+	//Comment userID, groupID lines if not running on windows
+	userID, groupID := returnUserIdentifiers(info)
+	builder.WriteString("  ")
+	builder.WriteString(userID)
+	builder.WriteString(" ")
+	builder.WriteString(groupID)
+	builder.WriteString(" ")
+	builder.WriteString(fmt.Sprintf("%10d", info.Size()))
+	builder.WriteString(" ")
+	builder.WriteString(info.ModTime().Format(time.RFC822))
+	builder.WriteString(" ")
+	builder.WriteString(file.Name())
+
+	return builder.String(), nil
+}
+
 func (s ServerConnection) ReadReadRequest(filename string) error {
 	// assumes we already got the RRQ
 	var buf bytes.Buffer
@@ -126,7 +178,11 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 		}
 
 		for _, file := range files {
-			buf.WriteString(file.Name())
+			listing, err := buildDirectoryListing(file)
+			if err != nil{
+				return err
+			}
+			buf.WriteString(listing)
 			buf.WriteByte('\n')
 		}
 	} else {
@@ -215,7 +271,7 @@ func (s ServerConnection) NextRequest() {
 }
 
 func StartServer(listener net.Listener, port string){
-	fmt.Println("Server Listening on port" + port )
+	fmt.Println("Server Listening on port " + port )
     defer listener.Close()
     for {
         conn, err := listener.Accept()
