@@ -1,4 +1,4 @@
-package tftp
+package main
 
 type Semaphore struct {
 	ch chan struct{}

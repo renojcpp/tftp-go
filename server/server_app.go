@@ -1,7 +1,8 @@
-package tftp
+package main
 
 import (
 	"fmt"
+	"github.com/renojcpp/tftp-go/tftp"
 	"net"
 )
 
@@ -34,7 +35,7 @@ func main() {
 func handleConnection(clientConnection net.Conn, s *Semaphore) {
 	defer s.Release()
 	defer clientConnection.Close()
-	serverCon := NewTFTPConnection(clientConnection, 0)
+	serverCon, _ := tftp.NewTFTPConnection(clientConnection, 0)
 	serverCon.Handshake()
 	serverCon.NextRequest()
 }
