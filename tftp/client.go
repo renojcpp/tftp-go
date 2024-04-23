@@ -260,6 +260,15 @@ func NewClient(hostname string, port int) (*Client, error) {
 	c := &Client{conn, *bufio.NewReader(conn), ok}
 
 	return c, nil
+
+}
+
+func (client *Client) ConnectionIsNotOpen() bool{
+	_, err := client.conn.Write([]byte{0})  //Test Byte
+	if err != nil {
+		return true
+	}
+	return false 
 }
 
 
@@ -275,11 +284,6 @@ func RunClientLoop(client *Client) {
         }
 
         input := scanner.Text()
-        if input == "quit" {
-            fmt.Println("Exiting TFTP Client.")
-            break 
-        }
-
         command, err := NewCommand(input) 
         if err != nil {
             fmt.Println("Invalid command:", err)
@@ -291,5 +295,11 @@ func RunClientLoop(client *Client) {
         if err != nil {
             fmt.Println("Error executing command:", err)
         }
+
+		if client.ConnectionIsNotOpen(){
+			fmt.Println("Connection Terminated")
+			break
+		}
     }
 }
+

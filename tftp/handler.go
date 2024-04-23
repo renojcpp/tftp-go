@@ -9,7 +9,7 @@ func HandleDAT(p Packet, ackwant uint32) (bool, error) {
 	dat := DATPacket(p)
 	done := false
 	if len(dat.Data()) > 512 {
-		return false, errors.New("too bytes of data on DAT Packet")
+		return false, errors.New("too many bytes of data on DAT Packet")
 	}
 
 	if dat.Size() != uint32(len(dat.Data())) {
