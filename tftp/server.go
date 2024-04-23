@@ -22,16 +22,27 @@ type ServerConnection struct {
 	conn       net.Conn
 	readWriter bufio.ReadWriter
 	id         int
+	encryption *EncryptionManager 
 }
 
-func NewTFTPConnection(c net.Conn, id int) *ServerConnection {
+func NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 	writer := bufio.NewWriter(c)
 	reader := bufio.NewReader(c)
-	return &ServerConnection{
+
+	encryption, err := NewEncryptionManager()
+	if err != nil{
+		log.Println("Error creating encryption manager")
+		return nil, err
+	}
+
+	server := &ServerConnection{
 		c,
 		*bufio.NewReadWriter(reader, writer),
 		id,
+		encryption,
 	}
+
+	return server, nil
 }
 
 func (s ServerConnection) SendError(str string) {
@@ -145,7 +156,7 @@ func returnUserIdentifiers(fileInfo os.FileInfo) (string, string){
 func buildDirectoryListing(file os.DirEntry) (string, error){
 	var builder strings.Builder
 
-	info, err := os.Stat(file.Name()) // Info provides additional file metadata
+	info, err := os.Stat(file.Name())
 	if err != nil {
 		fmt.Println("Error accessing file:", err)
 		return "", err
@@ -238,6 +249,31 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 	return nil
 }
 
+func (s *ServerConnection) HandleKeyExchange() error {
+	if err := s.StartKeyExchange(); err != nil {
+		log.Println("Error starting key exchange")
+		return err
+	}
+
+    encryptedSymmetricKey := make([]byte, 256)  
+    n, err := s.readWriter.Read(encryptedSymmetricKey)  
+    if err != nil {
+        return fmt.Errorf("failed to read encrypted key from client: %w", err)
+    }
+
+    encryptedSymmetricKey = encryptedSymmetricKey[:n]
+    decryptedSymmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey)
+    if err != nil {
+        return fmt.Errorf("decryption of symmetric key failed: %w", err)
+    }
+
+    s.encryption.sharedKey = decryptedSymmetricKey
+
+    fmt.Println("Key exchange completed successfully with connection id: ", s.id)
+    return nil
+}
+
+
 func (s ServerConnection) NextRequest() {
 	for {
 		// req, err := s.readWriter.ReadBytes('\000')
@@ -262,6 +298,11 @@ func (s ServerConnection) NextRequest() {
 		case WRQ:
 			wrq := WRQPacket(decoded)
 			err = s.ReadWriteRequest(wrq.Filename())
+		case KEY:
+			err := s.HandleKeyExchange()
+            if err != nil {
+                s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
+            }
 		default:
 			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
 		}
@@ -280,7 +321,10 @@ func StartServer(listener net.Listener, port string){
             continue
         }
 
-        tftpConn := NewTFTPConnection(conn, 1)
+        tftpConn, err := NewTFTPConnection(conn, 1)
+		if err != nil{
+			log.Println("Error creating server connection:", err)
+		}
         go tftpConn.NextRequest()
     }
 }

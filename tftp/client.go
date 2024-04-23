@@ -23,6 +23,7 @@ type Client struct {
 	conn   net.Conn
 	reader bufio.Reader
 	status cstatus
+	encryption *EncryptionManager 
 }
 
 func (client *Client) Command(c *Command) error {
@@ -252,15 +253,18 @@ func (c *Client) Handshake() error {
 
 func NewClient(hostname string, port int) (*Client, error) {
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
-
 	if err != nil {
 		return nil, err
 	}
 
-	c := &Client{conn, *bufio.NewReader(conn), ok}
+	encryption, err := NewEncryptionManager()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{conn, *bufio.NewReader(conn), ok, encryption}
 
 	return c, nil
-
 }
 
 func (client *Client) ConnectionIsNotOpen() bool{
@@ -271,10 +275,47 @@ func (client *Client) ConnectionIsNotOpen() bool{
 	return false 
 }
 
+func(client *Client) ExchangeKeys() error{
+	fmt.Println("Exchanging Public Key")
 
-func RunClientLoop(client *Client) {
+	keyRQ := EncodeKeyRQ()
+	fmt.Println("Client Bytes:", keyRQ)
+	_, err := client.conn.Write(keyRQ)
+	if err != nil {
+		return err
+	}
+
+	publicKeyPEM := []byte{}
+	tempBuffer := make([]byte, 256)
+	for {
+		n, err := client.reader.Read(tempBuffer) 
+		if err != nil {
+			return fmt.Errorf("failed to read server public key: %w", err)
+		}
+
+		publicKeyPEM = append(publicKeyPEM, tempBuffer[:n]...)
+
+		if bytes.HasSuffix(publicKeyPEM, []byte("\n")) {
+			break
+		}
+	}
+	
+	if err := client.CompleteKeyExchange(publicKeyPEM); err != nil {
+		return fmt.Errorf("key exchange failed: %w", err)
+	}
+
+	fmt.Println("Key Succesfully exchanged")
+	return nil
+}
+
+
+func RunClientLoop(client *Client) error {
+	err := client.ExchangeKeys()
+	if err != nil{
+		fmt.Println("Error exchanging keys: ", err)
+		return err
+	}
     fmt.Println("TFTP Client: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
-
     scanner := bufio.NewScanner(os.Stdin)
 
     for {
@@ -290,7 +331,6 @@ func RunClientLoop(client *Client) {
             continue 
         }
 
-        // Execute the command on the client
         err = client.Command(command)
         if err != nil {
             fmt.Println("Error executing command:", err)
@@ -301,5 +341,6 @@ func RunClientLoop(client *Client) {
 			break
 		}
     }
+	return nil
 }
 

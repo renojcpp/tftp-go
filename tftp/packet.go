@@ -16,6 +16,7 @@ const (
 	DAT
 	ACK
 	ERR
+	KEY
 )
 
 const (
@@ -166,4 +167,18 @@ func EncodeErr(s string) Packet {
 	}
 
 	return Encode(d)
+}
+
+func EncodeKeyRQ() Packet {
+	d := []any{
+		KEY,
+		EOS,
+	}
+
+	return Encode(d)
+}
+
+
+func SendPacket(packet Packet) error {
+	
 }
