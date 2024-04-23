@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"strings"
+	"fmt"
 )
 
 type HeaderId uint16
@@ -31,7 +32,8 @@ type RRQPacket Packet
 func (rrq *RRQPacket) Filename() string {
 	var ss strings.Builder
 	binary.Write(&ss, binary.BigEndian, (*rrq)[2:len(*rrq)-1])
-	return ss.String()
+	filename := strings.TrimRight(ss.String(), "\x00")
+	return filename
 }
 
 type WRQPacket Packet
@@ -77,23 +79,31 @@ func (errp *ERRPacket) Errstring() string {
 }
 
 func (p Packet) Type() HeaderId {
-	n := binary.LittleEndian.Uint16(p[0:2])
+	n := binary.BigEndian.Uint16(p[0:2])
 
 	return HeaderId(n)
 }
 
-func Encode(fields []any) Packet {
-	buf := new(bytes.Buffer)
+func Encode(fields []interface{}) Packet {
+    buf := new(bytes.Buffer)
 
-	for _, v := range fields {
-		err := binary.Write(buf, binary.BigEndian, v)
-		if err != nil {
-			panic("failed to create ack packet")
-		}
-	}
+    for _, v := range fields {
+        switch val := v.(type) {
+        case string:
+			encodedString := append([]byte(val), 0)
+			buf.Write(encodedString) 
+        default:
+            err := binary.Write(buf, binary.BigEndian, v)
+            if err != nil {
+                fmt.Println(err)
+                panic("failed to write value")
+            }
+        }
+    }
 
-	return buf.Bytes()
+    return buf.Bytes()
 }
+
 
 // func Decode[k ~[]byte](p k) Packet {
 // 	reader := bytes.NewReader(p)

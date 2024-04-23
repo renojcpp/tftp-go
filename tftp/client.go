@@ -108,7 +108,6 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 // receiving ACK packets. Code can be reused with WriteRRQStream.
 func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	wrq := EncodeWRQ(filename)
-
 	_, err := c.conn.Write(wrq)
 
 	if err != nil {
@@ -119,12 +118,11 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	buf := make([]byte, 512)
 	done := false
 	for !done {
-		// read ack
 		n, err := c.reader.Read(buf)
-
 		if err != nil {
 			return err
 		}
+
 
 		resp := buf[:n]
 
@@ -136,9 +134,10 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			if ack.Block() != ackn {
 				return fmt.Errorf("Unexpected block error %d", ackn)
 			}
+			fmt.Println("Acknowledge received")
 		case ERR:
 			e := ERRPacket(dec)
-
+			
 			return errors.New(e.Errstring())
 		default:
 			return errors.New("Unknown packet received ")
@@ -151,9 +150,12 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 		if err != nil {
 			return err
 		}
+		fmt.Println("Data packet written to file")
+
 
 		if len(dat.Data()) < 512 {
 			done = true
+			fmt.Println("End of data stream")
 		}
 	}
 	return nil
@@ -258,4 +260,36 @@ func NewClient(hostname string, port int) (*Client, error) {
 	c := &Client{conn, *bufio.NewReader(conn), ok}
 
 	return c, nil
+}
+
+
+func RunClientLoop(client *Client) {
+    fmt.Println("TFTP Client: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
+
+    scanner := bufio.NewScanner(os.Stdin)
+
+    for {
+        fmt.Print("client> ")
+        if !scanner.Scan() {
+            break 
+        }
+
+        input := scanner.Text()
+        if input == "quit" {
+            fmt.Println("Exiting TFTP Client.")
+            break 
+        }
+
+        command, err := NewCommand(input) 
+        if err != nil {
+            fmt.Println("Invalid command:", err)
+            continue 
+        }
+
+        // Execute the command on the client
+        err = client.Command(command)
+        if err != nil {
+            fmt.Println("Error executing command:", err)
+        }
+    }
 }

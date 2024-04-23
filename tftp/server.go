@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"log"
 )
 
 // todo: need to send errpackets
@@ -39,8 +40,8 @@ func (s ServerConnection) SendError(str string) {
 	}
 }
 
-func (s ServerConnection) ReadWriteRequest(filename string) error {
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+func (s ServerConnection) ReadWriteRequest(filename string) error {	
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
 
 	defer file.Close()
 	if err != nil {
@@ -53,6 +54,7 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 	for !done {
 		ack := EncodeACK(ackn)
 		_, err := s.conn.Write(ack)
+		fmt.Println("Sending Acknowledgment")
 
 		if err != nil {
 			return err
@@ -182,14 +184,17 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 
 func (s ServerConnection) NextRequest() {
 	for {
-		req, err := s.readWriter.ReadBytes('\000')
+		// req, err := s.readWriter.ReadBytes('\000')
+		req := make([]byte, 512) 
+		n, err := s.readWriter.Read(req)
 		if err != nil {
 			if err == io.EOF {
-				fmt.Fprintf(os.Stdout, "Connection closed")
+				fmt.Fprintf(os.Stdout, "Connection closed\n")
 			}
 			break
 		}
-
+		fmt.Println("Server Received Bytes:", req[:n])
+		
 		decoded := Packet(req)
 		switch decoded.Type() {
 		case RRQ:
@@ -208,3 +213,19 @@ func (s ServerConnection) NextRequest() {
 
 	s.conn.Close()
 }
+
+func StartServer(listener net.Listener, port string){
+	fmt.Println("Server Listening on port" + port )
+    defer listener.Close()
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            log.Println("Error accepting connection:", err)
+            continue
+        }
+
+        tftpConn := NewTFTPConnection(conn, 1)
+        go tftpConn.NextRequest()
+    }
+}
+
