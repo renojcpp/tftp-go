@@ -14,15 +14,17 @@ import (
 	"time"
 	"syscall"
 	"strings"
+	"crypto/x509"
+	"encoding/pem"
 )
 
 // todo: need to send errpackets
-
 type ServerConnection struct {
 	conn       net.Conn
 	readWriter bufio.ReadWriter
 	id         int
-	encryption *EncryptionManager 
+	encryption *EncryptionManager
+	keysExchanged bool
 }
 
 func NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
@@ -40,12 +42,14 @@ func NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 		*bufio.NewReadWriter(reader, writer),
 		id,
 		encryption,
+		false,
 	}
 
 	return server, nil
 }
 
-func (s ServerConnection) SendError(str string) {
+//Need to use encryption here
+func (s *ServerConnection) SendError(str string) {
 	errp := EncodeErr(str)
 
 	_, err := s.conn.Write(errp)
@@ -55,7 +59,7 @@ func (s ServerConnection) SendError(str string) {
 	}
 }
 
-func (s ServerConnection) ReadWriteRequest(filename string) error {	
+func (s *ServerConnection) ReadWriteRequest(filename string) error {	
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
 
 	defer file.Close()
@@ -65,10 +69,12 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 
 	var ackn uint32 = 0
 	done := false
-	buf := make([]byte, 1024)
 	for !done {
 		ack := EncodeACK(ackn)
-		_, err := s.conn.Write(ack)
+		err := s.SendPacket(ack)
+		if err != nil {
+			return err
+		}
 		fmt.Println("Sending Acknowledgment")
 
 		if err != nil {
@@ -76,13 +82,11 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 		}
 
 		ackn += 1
-		n, err := s.readWriter.Read(buf)
-		slice := buf[:n]
+
+		decoded, err := s.ReceivePacket()
 		if err != nil {
 			return err
 		}
-
-		decoded := Packet(slice)
 
 		switch decoded.Type() {
 		case DAT:
@@ -105,7 +109,7 @@ func (s ServerConnection) ReadWriteRequest(filename string) error {
 	return nil
 }
 
-func (s ServerConnection) Handshake() error {
+func (s *ServerConnection) Handshake() error {
 	msg := "Hello!"
 	packet := EncodeDAT(1, uint32(len(msg)), []byte(msg))
 
@@ -178,7 +182,7 @@ func buildDirectoryListing(file os.DirEntry) (string, error){
 	return builder.String(), nil
 }
 
-func (s ServerConnection) ReadReadRequest(filename string) error {
+func (s *ServerConnection) ReadReadRequest(filename string) error {
 	// assumes we already got the RRQ
 	var buf bytes.Buffer
 
@@ -209,25 +213,21 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 
 	done := false
 	var blockn uint32 = 1
-	readbuf := make([]byte, 512)
 	for !done {
 		next, err := stream.Next()
-		_, err = s.conn.Write(next)
+		err = s.SendPacket(Packet(next))
 		if err != nil {
 			return err
 		}
 
+		//Need to fix this to handle empty file
 		if len(next.Data()) < 512 {
 			done = true
 		}
-
-		n, err := s.readWriter.Read(readbuf)
-		resp := readbuf[:n]
+		decoded, err := s.ReceivePacket()
 		if err != nil {
 			return err
 		}
-
-		decoded := Packet(resp)
 
 		switch decoded.Type() {
 		case ACK:
@@ -248,45 +248,31 @@ func (s ServerConnection) ReadReadRequest(filename string) error {
 	return nil
 }
 
-func (s *ServerConnection) HandleKeyExchange() error {
-	if err := s.StartKeyExchange(); err != nil {
-		log.Println("Error starting key exchange")
-		return err
-	}
-
-    encryptedSymmetricKey := make([]byte, 256)  
-    n, err := s.readWriter.Read(encryptedSymmetricKey)  
-    if err != nil {
-        return fmt.Errorf("failed to read encrypted key from client: %w", err)
-    }
-
-    encryptedSymmetricKey = encryptedSymmetricKey[:n]
-    decryptedSymmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey)
-    if err != nil {
-        return fmt.Errorf("decryption of symmetric key failed: %w", err)
-    }
-
-    s.encryption.sharedKey = decryptedSymmetricKey
-
-    fmt.Println("Key exchange completed successfully with connection id: ", s.id)
-    return nil
-}
-
-
-func (s ServerConnection) NextRequest() {
+func (s *ServerConnection) NextRequest() {
+	var decoded Packet
+	var err error
 	for {
-		// req, err := s.readWriter.ReadBytes('\000')
-		req := make([]byte, 512) 
-		n, err := s.readWriter.Read(req)
-		if err != nil {
-			if err == io.EOF {
-				fmt.Fprintf(os.Stdout, "Connection closed\n")
+		//May want to modularize better. Conditional handles first uncencrypted packet
+		if(!s.keysExchanged){
+			buf := make([]byte, 1024)
+			n, err := s.readWriter.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					fmt.Fprintf(os.Stdout, "Connection closed\n")
+				}
+				break
 			}
-			break
+			decoded = Packet(buf[:n])
+		} else{
+			decoded, err = s.ReceivePacket()
+			if err != nil {
+				if err == io.EOF {
+					fmt.Fprintf(os.Stdout, "Connection closed\n")
+				}
+				break
+			}
 		}
-		fmt.Println("Server Received Bytes:", req[:n])
 		
-		decoded := Packet(req)
 		switch decoded.Type() {
 		case RRQ:
 			rrq := RRQPacket(decoded)
@@ -303,6 +289,10 @@ func (s ServerConnection) NextRequest() {
                 s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
             }
 		default:
+			//Ignoring connection check 0 byte, may need to refactor to make more robust
+			if (decoded.Type() == 0){
+				break
+			}
 			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
 		}
 	}
@@ -328,3 +318,93 @@ func StartServer(listener net.Listener, port string){
     }
 }
 
+
+
+
+/*
+Packet Sending and Encryption methods below
+*/
+
+func (s *ServerConnection) SendPacket(packet Packet) error {
+	encryptedPacket, err := encryptPacket(packet, s.encryption.sharedKey)
+	if err != nil {
+		return err
+	}
+	_, err = s.conn.Write(encryptedPacket)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+
+func (s *ServerConnection) ReceivePacket() (Packet, error) {
+	buf := make([]byte, 1024)
+	n, err := s.readWriter.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	packet, err := decryptPacket(buf[:n], s.encryption.sharedKey)
+	if err != nil {
+		return nil, err
+	}
+	return Packet(packet), nil
+}
+
+
+func (s *ServerConnection) HandleKeyExchange() error {
+	if err := s.StartKeyExchange(); err != nil {
+		log.Println("Error starting key exchange")
+		return err
+	}
+
+    encryptedSymmetricKey := make([]byte, 256)  
+    n, err := s.readWriter.Read(encryptedSymmetricKey)  
+    if err != nil {
+        return fmt.Errorf("failed to read encrypted key from client: %w", err)
+    }
+
+    encryptedSymmetricKey = encryptedSymmetricKey[:n]
+    decryptedSymmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey)
+    if err != nil {
+        return fmt.Errorf("decryption of symmetric key failed: %w", err)
+    }
+
+    s.encryption.sharedKey = decryptedSymmetricKey
+
+    fmt.Println("Key exchange completed successfully with connection id: ", s.id)
+	s.keysExchanged = true
+    return nil
+}
+
+
+func (s *ServerConnection) StartKeyExchange() error {
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&s.encryption.privateKey.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal public key: %w", err) 
+	}
+
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+
+	_, err = s.conn.Write(publicKeyPEM) 
+	return err
+}
+
+func (s *ServerConnection) CompleteKeyExchange() error {
+	encryptedSymmetricKey := make([]byte, 256) 
+	n, err := s.readWriter.Read(encryptedSymmetricKey)
+	if err != nil {
+		return err
+	}
+
+	symmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey[:n])
+	if err != nil {
+		return err
+	}
+
+	s.encryption.sharedKey = symmetricKey
+	return nil
+}

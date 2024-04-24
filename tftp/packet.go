@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"strings"
 	"fmt"
-	"net"
-	"bufio"
 )
 
 type HeaderId uint16
@@ -178,24 +176,4 @@ func EncodeKeyRQ() Packet {
 	}
 
 	return Encode(d)
-}
-
-
-func SendPacket(conn net.Conn, packet Packet) error {
-	fmt.Println("sending: ", packet)
-	_, err := conn.Write(packet)
-	if err != nil {
-		fmt.Println("error sending")
-		return err
-	}
-	return nil
-}
-
-func ReceivePacket(reader *bufio.Reader) (Packet, error) {
-	buf := make([]byte, 1024)
-	n, err := reader.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	return Packet(buf[:n]), nil
 }

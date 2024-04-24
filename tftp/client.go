@@ -9,6 +9,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"crypto/x509"
+	"encoding/pem"
+	"crypto/rand"
+	"crypto/rsa"
 )
 
 type cstatus int
@@ -52,25 +56,14 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	rrq := EncodeRRQ(filename)
 
 	// may need to do something extra about this
-	err := SendPacket(c.conn, rrq)
+	err := c.SendPacket(rrq)
 	if err != nil {
 		return err
 	}
 
-	// buf := make([]byte, 1024)
-
 	done := false
 	for !done {
-		// read data
-		// n, err := c.reader.Read(buf)
-		// slice := buf[:n]
-		// if err != nil {
-		// 	return err
-		// }
-
-		// dec := Packet(slice)
-
-		dec, err := ReceivePacket(&c.reader)
+		dec, err := c.ReceivePacket()
 		if err != nil {
 			return err
 		}
@@ -98,7 +91,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		}
 
 		ack := EncodeACK(ackn)
-		err = SendPacket(c.conn, ack)
+		err = c.SendPacket(ack)
 		if err != nil {
 			return err
 		}
@@ -114,25 +107,18 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 // receiving ACK packets. Code can be reused with WriteRRQStream.
 func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	wrq := EncodeWRQ(filename)
-	_, err := c.conn.Write(wrq)
-
+	// _, err := c.conn.Write(wrq)
+	// err := SendPacket(c.conn, wrq)
+	err := c.SendPacket(wrq)
 	if err != nil {
 		return err
 	}
 
 	stream := NewDATStream(r)
-	buf := make([]byte, 512)
 	done := false
 	for !done {
-		n, err := c.reader.Read(buf)
-		if err != nil {
-			return err
-		}
+		dec, err := c.ReceivePacket()
 
-
-		resp := buf[:n]
-
-		dec := Packet(resp)
 		var ackn uint32 = 0
 		switch dec.Type() {
 		case ACK:
@@ -151,7 +137,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 
 		dat, err := stream.Next()
 
-		_, err = c.conn.Write(dat)
+		err = c.SendPacket(Packet(dat)) 
 
 		if err != nil {
 			return err
@@ -176,7 +162,7 @@ func (c *Client) get(args []argument) error {
 		filename = args[1]
 	}
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
 	defer file.Close()
 
 	if err != nil {
@@ -280,40 +266,6 @@ func (client *Client) ConnectionIsNotOpen() bool{
 	return false 
 }
 
-func(client *Client) ExchangeKeys() error{
-	fmt.Println("Exchanging Public Key")
-
-	keyRQ := EncodeKeyRQ()
-	fmt.Println("Client Bytes:", keyRQ)
-	_, err := client.conn.Write(keyRQ)
-	if err != nil {
-		return err
-	}
-
-	publicKeyPEM := []byte{}
-	tempBuffer := make([]byte, 256)
-	for {
-		n, err := client.reader.Read(tempBuffer) 
-		if err != nil {
-			return fmt.Errorf("failed to read server public key: %w", err)
-		}
-
-		publicKeyPEM = append(publicKeyPEM, tempBuffer[:n]...)
-
-		if bytes.HasSuffix(publicKeyPEM, []byte("\n")) {
-			break
-		}
-	}
-	
-	if err := client.CompleteKeyExchange(publicKeyPEM); err != nil {
-		return fmt.Errorf("key exchange failed: %w", err)
-	}
-
-	fmt.Println("Key Succesfully exchanged")
-	return nil
-}
-
-
 func RunClientLoop(client *Client) error {
 	err := client.ExchangeKeys()
 	if err != nil{
@@ -349,3 +301,93 @@ func RunClientLoop(client *Client) error {
 	return nil
 }
 
+
+/*
+Packet Sending and Encryption methods below
+*/
+
+func (c *Client) ReceivePacket() (Packet, error) {
+	buf := make([]byte, 1024)
+	n, err := c.reader.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	packet, err := decryptPacket(buf[:n], c.encryption.sharedKey)
+	if err != nil {
+		return nil, err
+	}
+	return Packet(packet), nil
+}
+
+
+func (c *Client) SendPacket(packet Packet) error {
+	encryptedPacket, err := encryptPacket(packet, c.encryption.sharedKey)
+	if err != nil {
+		return err
+	}
+	_, err = c.conn.Write(encryptedPacket)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func(client *Client) ExchangeKeys() error{
+	fmt.Println("Exchanging Public Key")
+
+	keyRQ := EncodeKeyRQ()
+	fmt.Println("Client Bytes:", keyRQ)
+	_, err := client.conn.Write(keyRQ)
+	if err != nil {
+		return err
+	}
+
+	publicKeyPEM := []byte{}
+	tempBuffer := make([]byte, 256)
+	for {
+		n, err := client.reader.Read(tempBuffer) 
+		if err != nil {
+			return fmt.Errorf("failed to read server public key: %w", err)
+		}
+
+		publicKeyPEM = append(publicKeyPEM, tempBuffer[:n]...)
+
+		if bytes.HasSuffix(publicKeyPEM, []byte("\n")) {
+			break
+		}
+	}
+	
+	if err := client.CompleteKeyExchange(publicKeyPEM); err != nil {
+		return fmt.Errorf("key exchange failed: %w", err)
+	}
+
+	fmt.Println("Key Succesfully exchanged")
+	return nil
+}
+
+func (c *Client) CompleteKeyExchange(publicKeyPEM []byte) error {
+	block, _ := pem.Decode(publicKeyPEM)
+	if block == nil {
+		return fmt.Errorf("invalid public key PEM")
+	}
+
+	serverPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return err
+	}
+
+	symmetricKey := make([]byte, 32) 
+	_, err = rand.Reader.Read(symmetricKey)
+	if err != nil {
+		return err
+	}
+
+	encryptedSymmetricKey, err := rsaEncrypt(serverPublicKey.(*rsa.PublicKey), symmetricKey)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.conn.Write(encryptedSymmetricKey)
+	c.encryption.sharedKey = symmetricKey
+	return err
+}
