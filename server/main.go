@@ -1,18 +1,18 @@
 package main
 
 import (
-    "log"
-    "github.com/renojcpp/tftp-go/tftp"
-    "net"
+	"log"
+	"net"
 )
 
 func main() {
-    port := "8080"
+	port := "8080"
 
-    listener, err := net.Listen("tcp", ":"+ port )
-    if err != nil {
-        log.Fatal("Error starting server:", err)
-    }
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal("Error starting server:", err)
+	}
+	server := NewServer(listener, 10, port)
+	server.Start()
 
-    tftp.StartServer(listener, port)
 }
