@@ -349,6 +349,9 @@ func (s *Server) Start(){
 		if err != nil{
 			log.Println("Error creating server connection:", err)
 		}
+		if tftpConn != nil {
+			s.clientLimit.increaseClientCount()
+		}
         go tftpConn.NextRequest()
     }
 }

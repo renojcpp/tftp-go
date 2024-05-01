@@ -14,6 +14,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Error starting server:", err)
 	}
-	server := tftp.NewServer(listener, 10, port)
+	server := tftp.NewServer(listener, 2, port)
 	server.Start()
 }
