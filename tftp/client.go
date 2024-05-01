@@ -62,13 +62,13 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	}
 
 	done := false
+	var ackn uint32 = 1
 	for !done {
 		dec, err := c.ReceivePacket()
 		if err != nil {
 			return err
 		}
 
-		var ackn uint32 = 1
 		switch dec.Type() {
 		case DAT:
 			done, err = HandleDAT(dec, ackn)
@@ -82,6 +82,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 			if err != nil {
 				return err
 			}
+			fmt.Println("Data block #", ackn, "read")
 		case ERR:
 			errp := ERRPacket(dec)
 
@@ -95,8 +96,12 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		if err != nil {
 			return err
 		}
+		fmt.Println("Acknowledge block #", ackn, "sent")
 
 		ackn += 1
+		if done{
+			fmt.Println("Read Request fulfilled. End of data stream.")
+		}
 	}
 
 	return nil
@@ -116,33 +121,32 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 
 	stream := NewDATStream(r)
 	done := false
+	var ackn uint32 = 0
 	for !done {
 		dec, err := c.ReceivePacket()
 
-		var ackn uint32 = 0
 		switch dec.Type() {
 		case ACK:
 			ack := ACKPacket(dec)
 			if ack.Block() != ackn {
 				return fmt.Errorf("Unexpected block error %d", ackn)
 			}
-			fmt.Println("Acknowledge received")
+			fmt.Println("Acknowledge received block #", ackn)
+			ackn++
 		case ERR:
 			e := ERRPacket(dec)
-			
 			return errors.New(e.Errstring())
 		default:
 			return errors.New("Unknown packet received ")
 		}
 
 		dat, err := stream.Next()
-
 		err = c.SendPacket(Packet(dat)) 
 
 		if err != nil {
 			return err
 		}
-		fmt.Println("Data packet written to file")
+		fmt.Println("Data block #", ackn, "sent")
 
 
 		if len(dat.Data()) < 512 {

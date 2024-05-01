@@ -74,6 +74,7 @@ func (s *ServerConnection) SendError(str string) {
 }
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {	
+	fmt.Println("Processing read request")
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
 
 	defer file.Close()
@@ -89,7 +90,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("Sending Acknowledgment")
+		fmt.Println("Sending Acknowledgment block #", ackn)
 
 		if err != nil {
 			return err
@@ -106,6 +107,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		case DAT:
 			done, err = HandleDAT(decoded, ackn)
 			if err != nil {
+				fmt.Println(err)
 				return err
 			}
 			d := DATPacket(decoded)
@@ -113,10 +115,14 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			if err != nil {
 				return err
 			}
+			fmt.Println("Data written block #", ackn)
 		default:
 			errs := "Unexpected header"
 			s.SendError(errs)
 			return errors.New(errs)
+		}
+		if done{
+			fmt.Println("Write request fulfilled. End of data stream.")
 		}
 	}
 
@@ -197,7 +203,7 @@ func buildDirectoryListing(file os.DirEntry) (string, error){
 }
 
 func (s *ServerConnection) ReadReadRequest(filename string) error {
-	// assumes we already got the RRQ
+	fmt.Println("Processing read request")
 	var buf bytes.Buffer
 
 	if len(filename) == 0 {
@@ -230,9 +236,12 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	for !done {
 		next, err := stream.Next()
 		err = s.SendPacket(Packet(next))
+
+		
 		if err != nil {
 			return err
 		}
+		fmt.Println("Sending Data block #", blockn)
 
 		//Need to fix this to handle empty file
 		if len(next.Data()) < 512 {
@@ -252,11 +261,16 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 				s.SendError(errs)
 				return errors.New(errs)
 			}
+			fmt.Println("Acknowledge received for block #", blockn)
 		default:
 			errs := fmt.Sprintf("Unexpected header %s", decoded.Type().String())
 			s.SendError(errs)
 			return errors.New(errs)
 		}
+		if done{
+			fmt.Println("Read Request fulfilled. End of data stream.")
+		}
+		blockn++
 	}
 
 	return nil
