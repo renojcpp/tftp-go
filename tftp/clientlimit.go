@@ -1,4 +1,4 @@
-package main
+package tftp
 
 import (
 	"errors"
@@ -9,6 +9,10 @@ type Clientlimit struct {
 	mu         sync.Mutex
 	numClients int
 	maxClients int
+}
+
+func(c *Clientlimit) clientLimitReached() bool{
+	return c.numClients >= c.maxClients
 }
 
 func (c *Clientlimit) increaseClientCount() error {

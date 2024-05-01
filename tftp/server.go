@@ -18,6 +18,20 @@ import (
 	"encoding/pem"
 )
 
+type Server struct {
+	listener    net.Listener
+	clientLimit *Clientlimit
+	port        string
+}
+
+func NewServer(listener net.Listener, maxClients int, port string) *Server {
+	return &Server{
+		listener:    listener,
+		clientLimit: NewClientLimit(maxClients),
+		port:        port,
+	}
+}
+
 // todo: need to send errpackets
 type ServerConnection struct {
 	conn       net.Conn
@@ -27,7 +41,7 @@ type ServerConnection struct {
 	keysExchanged bool
 }
 
-func NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
+func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 	writer := bufio.NewWriter(c)
 	reader := bufio.NewReader(c)
 
@@ -300,17 +314,38 @@ func (s *ServerConnection) NextRequest() {
 	s.conn.Close()
 }
 
-func StartServer(listener net.Listener, port string){
-	fmt.Println("Server Listening on port " + port )
-    defer listener.Close()
+// func StartServer(listener net.Listener, port string){
+// 	fmt.Println("Server Listening on port " + port )
+//     defer listener.Close()
+//     for {
+//         conn, err := listener.Accept()
+//         if err != nil {
+//             log.Println("Error accepting connection:", err)
+//             continue
+//         }
+
+//         tftpConn, err := NewTFTPConnection(conn, 1)
+// 		if err != nil{
+// 			log.Println("Error creating server connection:", err)
+// 		}
+//         go tftpConn.NextRequest()
+//     }
+// }
+
+func (s *Server) Start(){
+	fmt.Println("Server Listening on port " + s.port )
+    defer s.listener.Close()
     for {
-        conn, err := listener.Accept()
+        conn, err := s.listener.Accept()
         if err != nil {
             log.Println("Error accepting connection:", err)
             continue
         }
-
-        tftpConn, err := NewTFTPConnection(conn, 1)
+		if conn != nil && s.clientLimit.clientLimitReached(){
+			fmt.Println("Client limit has been reached!")
+			continue
+		}
+        tftpConn, err := s.NewTFTPConnection(conn, 1)
 		if err != nil{
 			log.Println("Error creating server connection:", err)
 		}

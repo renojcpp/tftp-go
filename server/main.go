@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"net"
+	// "fmt"
+	"github.com/renojcpp/tftp-go/tftp"
 )
 
 func main() {
@@ -12,7 +14,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Error starting server:", err)
 	}
-	server := NewServer(listener, 10, port)
+	server := tftp.NewServer(listener, 10, port)
 	server.Start()
-
 }
