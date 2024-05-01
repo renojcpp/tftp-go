@@ -11,10 +11,6 @@ type Clientlimit struct {
 	maxClients int
 }
 
-func(c *Clientlimit) clientLimitReached() bool{
-	return c.numClients >= c.maxClients
-}
-
 func (c *Clientlimit) increaseClientCount() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

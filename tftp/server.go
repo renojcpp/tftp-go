@@ -341,16 +341,13 @@ func (s *Server) Start(){
             log.Println("Error accepting connection:", err)
             continue
         }
-		if conn != nil && s.clientLimit.clientLimitReached(){
+		if conn != nil && s.clientLimit.increaseClientCount() != nil {
 			fmt.Println("Client limit has been reached!")
 			continue
 		}
         tftpConn, err := s.NewTFTPConnection(conn, 1)
 		if err != nil{
 			log.Println("Error creating server connection:", err)
-		}
-		if tftpConn != nil {
-			s.clientLimit.increaseClientCount()
 		}
         go tftpConn.NextRequest()
     }
