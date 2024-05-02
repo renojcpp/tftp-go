@@ -184,7 +184,7 @@ func (c *Client) get(args []argument) error {
 		filename = args[1]
 	}
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	defer file.Close()
 
 	if err != nil {

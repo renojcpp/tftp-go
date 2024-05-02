@@ -75,7 +75,7 @@ func (s *ServerConnection) SendError(str string) {
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {	
 	fmt.Println("Processing read request")
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0666)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 
 	defer file.Close()
 	if err != nil {
