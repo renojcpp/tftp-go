@@ -92,14 +92,13 @@ func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error)
 }
 
 //Need to use encryption here
-func (s *ServerConnection) SendError(str string) {
+func (s *ServerConnection) SendError(str string) error {
 	errp := EncodeErr(str)
-
-	_, err := s.conn.Write(errp)
-
-	if err != nil {
-		panic("Failed to send error")
+	err := s.SendPacket(errp)
+	if err != nil{
+		return fmt.Errorf("Error sending err packet: ", err)
 	}
+	return nil
 }
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {	

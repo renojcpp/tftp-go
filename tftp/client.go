@@ -85,7 +85,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 			fmt.Println("Data block #", ackn, "read")
 		case ERR:
 			errp := ERRPacket(dec)
-
+			fmt.Println(errp.Errstring())
 			return errors.New(errp.Errstring())
 		default:
 			return errors.New("Unknown packet received")
@@ -358,7 +358,6 @@ func(client *Client) ExchangeKeys() error{
 	fmt.Println("Exchanging Public Key")
 
 	keyRQ := EncodeKeyRQ()
-	fmt.Println("Client Bytes:", keyRQ)
 	_, err := client.conn.Write(keyRQ)
 	if err != nil {
 		return err
