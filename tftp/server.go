@@ -187,6 +187,10 @@ func (s *ServerConnection) Handshake() error {
 	switch decoded.Type() {
 	case ACK:
 		fmt.Println("Handshake Acknowledgement Received")
+		err := s.HandleKeyExchange()
+		if err != nil {
+			s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
+		}
 		return nil
 	default:
 		return errors.New("Unexpected block from handshake")
@@ -350,11 +354,6 @@ func (s *ServerConnection) NextRequest() {
 		case WRQ:
 			wrq := WRQPacket(decoded)
 			err = s.ReadWriteRequest(wrq.Filename())
-		case KEY:
-			err := s.HandleKeyExchange()
-            if err != nil {
-                s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
-            }
 		default:
 			//Ignoring connection check 0 byte, may need to refactor to make more robust
 			if (decoded.Type() == 0){
@@ -411,9 +410,6 @@ func (s *Server) Start(){
         go tftpConn.NextRequest()
     }
 }
-
-
-
 
 /*
 Packet Sending and Encryption methods below

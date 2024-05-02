@@ -13,7 +13,7 @@ import (
 	"encoding/pem"
 	"crypto/rand"
 	"crypto/rsa"
-	"time"
+	// "time"
 )
 
 type cstatus int
@@ -253,7 +253,7 @@ func (c *Client) Handshake() error {
 		if dat.Block() != 1 {
 			return fmt.Errorf("Unexpected block number: %d", dat.Block())
 		}
-		fmt.Println("Handshake dat block # 1 received")
+		fmt.Println("Handshake Dat block received")
 
 		ack := EncodeACK(1)
 		_, err := c.conn.Write(ack)
@@ -261,11 +261,19 @@ func (c *Client) Handshake() error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("Acknowledge of block # 1 sent")
+		fmt.Println("Acknowledge of handshake sent")
+
+		err = c.ExchangeKeys()
+		if err != nil{
+			fmt.Println("Error exchanging keys: ", err)
+			return err
+		}
+
 		return nil
 	default:
 		return errors.New("unexpected header")
 	}
+	
 }
 
 func NewClient(hostname string, port int) (*Client, error) {
@@ -298,13 +306,7 @@ func NewClient(hostname string, port int) (*Client, error) {
 // }
 
 func RunClientLoop(client *Client) error {
-	time.Sleep(1 * time.Second)
-	err := client.ExchangeKeys()
-	if err != nil{
-		fmt.Println("Error exchanging keys: ", err)
-		return err
-	}
-    fmt.Println("TFTP Client: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
+    fmt.Println("TFTP Client started: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
     scanner := bufio.NewScanner(os.Stdin)
 
     for {
@@ -366,12 +368,6 @@ func (c *Client) SendPacket(packet Packet) error {
 
 func(client *Client) ExchangeKeys() error{
 	fmt.Println("Exchanging Public Key")
-
-	keyRQ := EncodeKeyRQ()
-	_, err := client.conn.Write(keyRQ)
-	if err != nil {
-		return err
-	}
 
 	publicKeyPEM := []byte{}
 	tempBuffer := make([]byte, 256)
