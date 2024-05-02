@@ -16,24 +16,52 @@ import (
 	"strings"
 	"crypto/x509"
 	"encoding/pem"
+	"path/filepath"
 )
 
 type Server struct {
 	listener    net.Listener
 	clientLimit *Clientlimit
 	port        string
+	rootPath	string
 }
 
-func NewServer(listener net.Listener, maxClients int, port string) *Server {
+func NewServer(listener net.Listener, maxClients int, port string, rootPath string) *Server {
+	if rootPath != ""{
+		err := createRootDirectory(rootPath)
+		if err != nil{
+			log.Fatalf("Error creating server root directory")
+		}
+	}
+	
 	return &Server{
 		listener:    listener,
 		clientLimit: NewClientLimit(maxClients),
 		port:        port,
+		rootPath: rootPath,
 	}
+}
+
+func createRootDirectory(rootDir string) error{
+	if !filepath.IsAbs(rootDir) {
+        absPath, err := filepath.Abs(rootDir)
+        if err != nil {
+            return fmt.Errorf("error getting absolute path: %v", err)
+        }
+        rootDir = absPath
+    }
+
+    err := os.MkdirAll(rootDir, 0755)
+    if err != nil {
+        return fmt.Errorf("Failed to create or access root directory '%s': %v", rootDir, err)
+    }
+
+	return nil
 }
 
 // todo: need to send errpackets
 type ServerConnection struct {
+	server *Server
 	conn       net.Conn
 	readWriter bufio.ReadWriter
 	id         int
@@ -52,6 +80,7 @@ func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error)
 	}
 
 	server := &ServerConnection{
+		s,
 		c,
 		*bufio.NewReadWriter(reader, writer),
 		id,
@@ -75,10 +104,12 @@ func (s *ServerConnection) SendError(str string) {
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {	
 	fmt.Println("Processing read request")
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	// path := filepath.Join(s.server.rootPath, filename)
+	file, err := os.OpenFile(s.server.rootPath + filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 
 	defer file.Close()
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
