@@ -122,6 +122,12 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			return errors.New(errs)
 		}
 		if done{
+			ack := EncodeACK(ackn)
+			err := s.SendPacket(ack)
+			if err != nil {
+				return err
+			}
+			fmt.Println("Sending Acknowledgment block #", ackn)
 			fmt.Println("Write request fulfilled. End of data stream.")
 		}
 	}

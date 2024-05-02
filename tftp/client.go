@@ -148,8 +148,28 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 
 
 		if len(dat.Data()) < 512 {
-			done = true
 			fmt.Println("End of data stream")
+			//THis checks for final ack
+			//Code is redudant to above so may want to modularize
+			dec, err := c.ReceivePacket()
+			if err != nil {
+				return err
+			}
+			switch dec.Type() {
+			case ACK:
+				ack := ACKPacket(dec)
+				if ack.Block() != ackn {
+					return fmt.Errorf("Unexpected block error %d", ackn)
+				}
+				fmt.Println("Acknowledge received block #", ackn)
+				ackn++
+			case ERR:
+				e := ERRPacket(dec)
+				return errors.New(e.Errstring())
+			default:
+				return errors.New("Unknown packet received ")
+			}
+			done = true
 		}
 	}
 	return nil
