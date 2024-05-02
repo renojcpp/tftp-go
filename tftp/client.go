@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 )
 
 type cstatus int
@@ -287,6 +288,15 @@ func NewClient(hostname string, port int) (*Client, error) {
 		return nil, err
 	}
 
+	tcpConn, connOk := conn.(*net.TCPConn)
+	if !connOk {
+		conn.Close()
+		return nil, fmt.Errorf("connection is not TCP")
+	}
+
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(3 * time.Minute)
+
 	encryption, err := NewEncryptionManager()
 	if err != nil {
 		return nil, err
@@ -301,14 +311,6 @@ func NewClient(hostname string, port int) (*Client, error) {
 
 	return c, nil
 }
-
-// func (client *Client) ConnectionIsNotOpen() bool{
-// 	_, err := client.conn.Write([]byte{0})  //Test Byte
-// 	if err != nil {
-// 		return true
-// 	}
-// 	return false
-// }
 
 func RunClientLoop(client *Client) error {
 	fmt.Println("TFTP Client started: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
@@ -329,13 +331,15 @@ func RunClientLoop(client *Client) error {
 
 		err = client.Command(command)
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok {
+				if !netErr.Temporary() || netErr.Timeout() {
+					fmt.Println("Coonnection lost:", err)
+					return err
+				}
+			}
 			fmt.Println("Error executing command:", err)
 		}
 
-		// if client.ConnectionIsNotOpen(){
-		// 	fmt.Println("Connection Terminated")
-		// 	break
-		// }
 	}
 	return nil
 }
