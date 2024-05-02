@@ -85,7 +85,6 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 			fmt.Println("Data block #", ackn, "read")
 		case ERR:
 			errp := ERRPacket(dec)
-			fmt.Println(errp.Errstring())
 			return errors.New(errp.Errstring())
 		default:
 			return errors.New("Unknown packet received")
@@ -178,21 +177,25 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 // get runs the get command, which involves file transfer
 // from a server
 func (c *Client) get(args []argument) error {
+	var buffer bytes.Buffer
 	filename := args[0]
 
 	if len(args) == 2 {
 		filename = args[1]
 	}
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
-	defer file.Close()
-
+	err := c.WriteReadRequest(&buffer, args[0])
 	if err != nil {
 		return err
 	}
 
-	err = c.WriteReadRequest(file, args[0])
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
+	_, err = buffer.WriteTo(file)
 	if err != nil {
 		return err
 	}
