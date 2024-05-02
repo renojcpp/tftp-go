@@ -21,7 +21,7 @@ func HandleDAT(p Packet, ackwant uint32) (bool, error) {
 	}
 
 	if dat.Block() != ackwant {
-		return false, fmt.Errorf("Unexpected block data %d", ackwant)
+		return false, fmt.Errorf("unexpected block data %d", ackwant)
 	}
 
 	return done, nil

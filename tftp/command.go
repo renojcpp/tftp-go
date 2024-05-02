@@ -26,10 +26,10 @@ type argument = string
 
 const (
 	Get  command = "get"
-	Dir          = "dir"
-	Put          = "put"
-	Quit         = "quit"
-	Nil          = ""
+	Dir  command = "dir"
+	Put  command = "put"
+	Quit command = "quit"
+	Nil  command = ""
 )
 
 type Command struct {
@@ -37,12 +37,12 @@ type Command struct {
 	args []argument
 }
 
-var commands = map[command]struct{}{
-	Get:  {},
-	Dir:  {},
-	Put:  {},
-	Quit: {},
-}
+// var commands = map[command]struct{}{
+// 	Get:  {},
+// 	Dir:  {},
+// 	Put:  {},
+// 	Quit: {},
+// }
 
 func readStatement(stmt string) (command, []argument, error) {
 	stmt = strings.TrimSpace(stmt)

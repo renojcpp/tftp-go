@@ -3,17 +3,16 @@ package tftp
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"crypto/x509"
-	"encoding/pem"
-	"crypto/rand"
-	"crypto/rsa"
-	// "time"
 )
 
 type cstatus int
@@ -25,10 +24,10 @@ const (
 )
 
 type Client struct {
-	conn   net.Conn
-	reader bufio.Reader
-	status cstatus
-	encryption *EncryptionManager 
+	conn       net.Conn
+	reader     bufio.Reader
+	status     cstatus
+	encryption *EncryptionManager
 }
 
 func (client *Client) Command(c *Command) error {
@@ -88,7 +87,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 			errp := ERRPacket(dec)
 			return errors.New(errp.Errstring())
 		default:
-			return errors.New("Unknown packet received")
+			return errors.New("unknown packet received")
 		}
 
 		ack := EncodeACK(ackn)
@@ -99,7 +98,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		fmt.Println("Acknowledge block #", ackn, "sent")
 
 		ackn += 1
-		if done{
+		if done {
 			fmt.Println("Read Request fulfilled. End of data stream.")
 		}
 	}
@@ -122,12 +121,15 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	var ackn uint32 = 0
 	for !done {
 		dec, err := c.ReceivePacket()
+		if err != nil {
+			return err
+		}
 
 		switch dec.Type() {
 		case ACK:
 			ack := ACKPacket(dec)
 			if ack.Block() != ackn {
-				return fmt.Errorf("Unexpected block error %d", ackn)
+				return fmt.Errorf("unexpected block error %d", ackn)
 			}
 			fmt.Println("Acknowledge received block #", ackn)
 			ackn++
@@ -135,17 +137,19 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			e := ERRPacket(dec)
 			return errors.New(e.Errstring())
 		default:
-			return errors.New("Unknown packet received ")
+			return errors.New("unknown packet received ")
 		}
 
 		dat, err := stream.Next()
-		err = c.SendPacket(Packet(dat)) 
+		if err != nil {
+			return err
+		}
+		err = c.SendPacket(Packet(dat))
 
 		if err != nil {
 			return err
 		}
 		fmt.Println("Data block #", ackn, "sent")
-
 
 		if len(dat.Data()) < 512 {
 			fmt.Println("End of data stream")
@@ -159,7 +163,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			case ACK:
 				ack := ACKPacket(dec)
 				if ack.Block() != ackn {
-					return fmt.Errorf("Unexpected block error %d", ackn)
+					return fmt.Errorf("unexpected block error %d", ackn)
 				}
 				fmt.Println("Acknowledge received block #", ackn)
 				ackn++
@@ -167,7 +171,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 				e := ERRPacket(dec)
 				return errors.New(e.Errstring())
 			default:
-				return errors.New("Unknown packet received ")
+				return errors.New("unknown packet received ")
 			}
 			done = true
 		}
@@ -211,6 +215,7 @@ func (c *Client) put(args []argument) error {
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
 	filename := args[0]
 	if len(args) == 2 {
@@ -251,7 +256,7 @@ func (c *Client) Handshake() error {
 		dat := DATPacket(decoded)
 
 		if dat.Block() != 1 {
-			return fmt.Errorf("Unexpected block number: %d", dat.Block())
+			return fmt.Errorf("unexpected block number: %d", dat.Block())
 		}
 		fmt.Println("Handshake Dat block received")
 
@@ -264,7 +269,7 @@ func (c *Client) Handshake() error {
 		fmt.Println("Acknowledge of handshake sent")
 
 		err = c.ExchangeKeys()
-		if err != nil{
+		if err != nil {
 			fmt.Println("Error exchanging keys: ", err)
 			return err
 		}
@@ -273,7 +278,7 @@ func (c *Client) Handshake() error {
 	default:
 		return errors.New("unexpected header")
 	}
-	
+
 }
 
 func NewClient(hostname string, port int) (*Client, error) {
@@ -290,9 +295,9 @@ func NewClient(hostname string, port int) (*Client, error) {
 	c := &Client{conn, *bufio.NewReader(conn), ok, encryption}
 
 	if err := c.Handshake(); err != nil {
-        conn.Close()
-        return nil, fmt.Errorf("handshake failed: %v", err)
-    }
+		conn.Close()
+		return nil, fmt.Errorf("handshake failed: %v", err)
+	}
 
 	return c, nil
 }
@@ -302,39 +307,38 @@ func NewClient(hostname string, port int) (*Client, error) {
 // 	if err != nil {
 // 		return true
 // 	}
-// 	return false 
+// 	return false
 // }
 
 func RunClientLoop(client *Client) error {
-    fmt.Println("TFTP Client started: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
-    scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("TFTP Client started: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
+	scanner := bufio.NewScanner(os.Stdin)
 
-    for {
-        fmt.Print("client> ")
-        if !scanner.Scan() {
-            break 
-        }
+	for {
+		fmt.Print("client> ")
+		if !scanner.Scan() {
+			break
+		}
 
-        input := scanner.Text()
-        command, err := NewCommand(input) 
-        if err != nil {
-            fmt.Println("Invalid command:", err)
-            continue 
-        }
+		input := scanner.Text()
+		command, err := NewCommand(input)
+		if err != nil {
+			fmt.Println("Invalid command:", err)
+			continue
+		}
 
-        err = client.Command(command)
-        if err != nil {
-            fmt.Println("Error executing command:", err)
-        }
+		err = client.Command(command)
+		if err != nil {
+			fmt.Println("Error executing command:", err)
+		}
 
 		// if client.ConnectionIsNotOpen(){
 		// 	fmt.Println("Connection Terminated")
 		// 	break
 		// }
-    }
+	}
 	return nil
 }
-
 
 /*
 Packet Sending and Encryption methods below
@@ -353,7 +357,6 @@ func (c *Client) ReceivePacket() (Packet, error) {
 	return Packet(packet), nil
 }
 
-
 func (c *Client) SendPacket(packet Packet) error {
 	encryptedPacket, err := encryptPacket(packet, c.encryption.sharedKey)
 	if err != nil {
@@ -366,13 +369,13 @@ func (c *Client) SendPacket(packet Packet) error {
 	return nil
 }
 
-func(client *Client) ExchangeKeys() error{
+func (client *Client) ExchangeKeys() error {
 	fmt.Println("Exchanging Public Key")
 
 	publicKeyPEM := []byte{}
 	tempBuffer := make([]byte, 256)
 	for {
-		n, err := client.reader.Read(tempBuffer) 
+		n, err := client.reader.Read(tempBuffer)
 		if err != nil {
 			return fmt.Errorf("failed to read server public key: %w", err)
 		}
@@ -383,7 +386,7 @@ func(client *Client) ExchangeKeys() error{
 			break
 		}
 	}
-	
+
 	if err := client.CompleteKeyExchange(publicKeyPEM); err != nil {
 		return fmt.Errorf("key exchange failed: %w", err)
 	}
@@ -403,7 +406,7 @@ func (c *Client) CompleteKeyExchange(publicKeyPEM []byte) error {
 		return err
 	}
 
-	symmetricKey := make([]byte, 32) 
+	symmetricKey := make([]byte, 32)
 	_, err = rand.Reader.Read(symmetricKey)
 	if err != nil {
 		return err

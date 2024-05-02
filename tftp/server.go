@@ -3,79 +3,76 @@ package tftp
 import (
 	"bufio"
 	"bytes"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
-	"os/user"
-	"log"
-	"time"
-	"syscall"
-	"strings"
-	"crypto/x509"
-	"encoding/pem"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 type Server struct {
 	listener    net.Listener
 	clientLimit *Clientlimit
 	port        string
-	rootPath	string
+	rootPath    string
 }
 
 // todo: need to send errpackets
 type ServerConnection struct {
-	server *Server
-	conn       net.Conn
-	readWriter bufio.ReadWriter
-	id         int
-	encryption *EncryptionManager
+	server        *Server
+	conn          net.Conn
+	readWriter    bufio.ReadWriter
+	id            int
+	encryption    *EncryptionManager
 	keysExchanged bool
 }
 
 func NewServer(listener net.Listener, maxClients int, port string, rootPath string) *Server {
-	if rootPath != ""{
+	if rootPath != "" {
 		err := createRootDirectory(rootPath)
-		if err != nil{
+		if err != nil {
 			log.Fatalf("Error creating server root directory")
 		}
 	}
-	
+
 	return &Server{
 		listener:    listener,
 		clientLimit: NewClientLimit(maxClients),
 		port:        port,
-		rootPath: rootPath,
+		rootPath:    rootPath,
 	}
 }
 
-func createRootDirectory(rootDir string) error{
+func createRootDirectory(rootDir string) error {
 	if !filepath.IsAbs(rootDir) {
-        absPath, err := filepath.Abs(rootDir)
-        if err != nil {
-            return fmt.Errorf("error getting absolute path: %v", err)
-        }
-        rootDir = absPath
-    }
+		absPath, err := filepath.Abs(rootDir)
+		if err != nil {
+			return fmt.Errorf("error getting absolute path: %v", err)
+		}
+		rootDir = absPath
+	}
 
-    err := os.MkdirAll(rootDir, 0755)
-    if err != nil {
-        return fmt.Errorf("Failed to create or access root directory '%s': %v", rootDir, err)
-    }
+	err := os.MkdirAll(rootDir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create or access root directory '%s': %v", rootDir, err)
+	}
 
 	return nil
 }
 
-
-func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
+func (s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 	writer := bufio.NewWriter(c)
 	reader := bufio.NewReader(c)
 
 	encryption, err := NewEncryptionManager()
-	if err != nil{
+	if err != nil {
 		log.Println("Error creating encryption manager")
 		return nil, err
 	}
@@ -95,22 +92,21 @@ func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error)
 func (s *ServerConnection) SendError(str string) error {
 	errp := EncodeErr(str)
 	err := s.SendPacket(errp)
-	if err != nil{
-		return fmt.Errorf("Error sending err packet: ", err)
+	if err != nil {
+		return fmt.Errorf("error sending err packet: %w", err)
 	}
 	return nil
 }
 
-func (s *ServerConnection) ReadWriteRequest(filename string) error {	
+func (s *ServerConnection) ReadWriteRequest(filename string) error {
 	fmt.Println("Processing read request")
-	// path := filepath.Join(s.server.rootPath, filename)
-	file, err := os.OpenFile(s.server.rootPath + filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(s.server.rootPath+filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 
-	defer file.Close()
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
+	defer file.Close()
 
 	var ackn uint32 = 0
 	done := false
@@ -121,11 +117,6 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			return err
 		}
 		fmt.Println("Sending Acknowledgment block #", ackn)
-
-		if err != nil {
-			return err
-		}
-
 		ackn += 1
 
 		decoded, err := s.ReceivePacket()
@@ -147,11 +138,11 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			}
 			fmt.Println("Data written block #", ackn)
 		default:
-			errs := "Unexpected header"
+			errs := "unexpected header"
 			s.SendError(errs)
 			return errors.New(errs)
 		}
-		if done{
+		if done {
 			ack := EncodeACK(ackn)
 			err := s.SendPacket(ack)
 			if err != nil {
@@ -193,34 +184,31 @@ func (s *ServerConnection) Handshake() error {
 		}
 		return nil
 	default:
-		return errors.New("Unexpected block from handshake")
+		return errors.New("unexpected block from handshake")
 	}
 }
 
-func returnUserIdentifiers(fileInfo os.FileInfo) (string, string){
-	//might not work on all operating systems if encountering windows problems
-	//comment out the use of this function and its returns in RRQ function
+// func returnUserIdentifiers(fileInfo os.FileInfo) (string, string) {
+// 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+// 	if !ok {
+// 		log.Fatal("Failed to extract file system info")
+// 	}
+// 	uid := stat.Uid
+// 	gid := stat.Gid
+// 	userInfo, err := user.LookupId(fmt.Sprintf("%d", uid))
+// 	if err != nil {
+// 		log.Fatal("Error looking up user:", err)
+// 	}
 
-	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		log.Fatal("Failed to extract file system info")
-	}	
-	uid := stat.Uid 
-	gid := stat.Gid 
-	userInfo, err := user.LookupId(fmt.Sprintf("%d", uid))
-	if err != nil {
-		log.Fatal("Error looking up user:", err)
-	}
+// 	groupInfo, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
+// 	if err != nil {
+// 		log.Fatal("Error looking up group:", err)
+// 	}
 
-	groupInfo, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
-	if err != nil {
-		log.Fatal("Error looking up group:", err)
-	}
+// 	return userInfo.Username, groupInfo.Name
+// }
 
-	return userInfo.Username, groupInfo.Name
-}
-
-func buildDirectoryListing(file os.DirEntry) (string, error){
+func buildDirectoryListing(file os.DirEntry) (string, error) {
 	var builder strings.Builder
 
 	info, err := os.Stat(file.Name())
@@ -229,13 +217,13 @@ func buildDirectoryListing(file os.DirEntry) (string, error){
 		return "", err
 	}
 	builder.WriteString(info.Mode().String())
-	//Comment userID, groupID lines if not running on windows
-	userID, groupID := returnUserIdentifiers(info)
-	builder.WriteString("  ")
-	builder.WriteString(userID)
-	builder.WriteString(" ")
-	builder.WriteString(groupID)
-	builder.WriteString(" ")
+	// Comment userID, groupID lines if not running on windows
+	// userID, groupID := returnUserIdentifiers(info)
+	// builder.WriteString("  ")
+	// builder.WriteString(userID)
+	// builder.WriteString(" ")
+	// builder.WriteString(groupID)
+	// builder.WriteString(" ")
 	builder.WriteString(fmt.Sprintf("%10d", info.Size()))
 	builder.WriteString(" ")
 	builder.WriteString(info.ModTime().Format(time.RFC822))
@@ -257,7 +245,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 
 		for _, file := range files {
 			listing, err := buildDirectoryListing(file)
-			if err != nil{
+			if err != nil {
 				return err
 			}
 			buf.WriteString(listing)
@@ -278,15 +266,17 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	var blockn uint32 = 1
 	for !done {
 		next, err := stream.Next()
+		if err != nil {
+			s.SendError(err.Error())
+			return err
+		}
 		err = s.SendPacket(Packet(next))
 
-		
 		if err != nil {
 			return err
 		}
 		fmt.Println("Sending Data block #", blockn)
 
-		//Need to fix this to handle empty file
 		if len(next.Data()) < 512 {
 			done = true
 		}
@@ -310,7 +300,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 			s.SendError(errs)
 			return errors.New(errs)
 		}
-		if done{
+		if done {
 			fmt.Println("Read Request fulfilled. End of data stream.")
 		}
 		blockn++
@@ -323,8 +313,8 @@ func (s *ServerConnection) NextRequest() {
 	var decoded Packet
 	var err error
 	for {
-		//May want to modularize better. Conditional handles first uncencrypted packet
-		if(!s.keysExchanged){
+		//May want to modularize better. Conditional handles first uncencrypted packets
+		if !s.keysExchanged {
 			buf := make([]byte, 1024)
 			n, err := s.readWriter.Read(buf)
 			if err != nil {
@@ -334,7 +324,7 @@ func (s *ServerConnection) NextRequest() {
 				break
 			}
 			decoded = Packet(buf[:n])
-		} else{
+		} else {
 			decoded, err = s.ReceivePacket()
 			if err != nil {
 				if err == io.EOF {
@@ -349,16 +339,15 @@ func (s *ServerConnection) NextRequest() {
 			rrq := RRQPacket(decoded)
 			err = s.ReadReadRequest(rrq.Filename())
 			if err != nil {
-				// do something
+				s.SendError(err.Error())
 			}
 		case WRQ:
 			wrq := WRQPacket(decoded)
 			err = s.ReadWriteRequest(wrq.Filename())
-		default:
-			//Ignoring connection check 0 byte, may need to refactor to make more robust
-			if (decoded.Type() == 0){
-				break
+			if err != nil {
+				s.SendError(err.Error())
 			}
+		default:
 			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
 		}
 	}
@@ -366,49 +355,40 @@ func (s *ServerConnection) NextRequest() {
 	s.conn.Close()
 }
 
-// func StartServer(listener net.Listener, port string){
-// 	fmt.Println("Server Listening on port " + port )
-//     defer listener.Close()
-//     for {
-//         conn, err := listener.Accept()
-//         if err != nil {
-//             log.Println("Error accepting connection:", err)
-//             continue
-//         }
-
-//         tftpConn, err := NewTFTPConnection(conn, 1)
-// 		if err != nil{
-// 			log.Println("Error creating server connection:", err)
-// 		}
-//         go tftpConn.NextRequest()
-//     }
-// }
-
-func (s *Server) Start(){
-	fmt.Println("Server Listening on port " + s.port )
-    defer s.listener.Close()
-    for {
-        conn, err := s.listener.Accept()
-        if err != nil {
-            log.Println("Error accepting connection:", err)
-            continue
-        }
-		if conn != nil && s.clientLimit.increaseClientCount() != nil {
-			fmt.Println("Client limit has been reached!")
+func (s *Server) Start() {
+	fmt.Println("Server Listening on port " + s.port)
+	defer s.listener.Close()
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			log.Println("Error accepting connection:", err)
 			continue
 		}
-        tftpConn, err := s.NewTFTPConnection(conn, 1)
-		if err != nil{
-			log.Println("Error creating server connection:", err)
-		}
 
-		if err := tftpConn.Handshake(); err != nil {
-            log.Println("Handshake failed:", err)
-            conn.Close()
-            continue
-        }
-        go tftpConn.NextRequest()
-    }
+		go s.handleConnection(conn)
+	}
+}
+
+func (s *Server) handleConnection(conn net.Conn) {
+	defer conn.Close()
+	if err := s.clientLimit.increaseClientCount(); err != nil {
+		fmt.Println("Client limit has been reached!")
+		return
+	}
+	defer s.clientLimit.decreaseClientCount()
+
+	tftpConn, err := s.NewTFTPConnection(conn, 1)
+	if err != nil {
+		fmt.Println("Error creating server connection:", err)
+		return
+	}
+
+	if err := tftpConn.Handshake(); err != nil {
+		fmt.Println("Handshake failed:", err)
+		return
+	}
+
+	tftpConn.NextRequest()
 }
 
 /*
@@ -427,7 +407,6 @@ func (s *ServerConnection) SendPacket(packet Packet) error {
 	return nil
 }
 
-
 func (s *ServerConnection) ReceivePacket() (Packet, error) {
 	buf := make([]byte, 1024)
 	n, err := s.readWriter.Read(buf)
@@ -441,37 +420,35 @@ func (s *ServerConnection) ReceivePacket() (Packet, error) {
 	return Packet(packet), nil
 }
 
-
 func (s *ServerConnection) HandleKeyExchange() error {
 	if err := s.StartKeyExchange(); err != nil {
 		log.Println("Error starting key exchange")
 		return err
 	}
 
-    encryptedSymmetricKey := make([]byte, 256)  
-    n, err := s.readWriter.Read(encryptedSymmetricKey)  
-    if err != nil {
-        return fmt.Errorf("failed to read encrypted key from client: %w", err)
-    }
+	encryptedSymmetricKey := make([]byte, 256)
+	n, err := s.readWriter.Read(encryptedSymmetricKey)
+	if err != nil {
+		return fmt.Errorf("failed to read encrypted key from client: %w", err)
+	}
 
-    encryptedSymmetricKey = encryptedSymmetricKey[:n]
-    decryptedSymmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey)
-    if err != nil {
-        return fmt.Errorf("decryption of symmetric key failed: %w", err)
-    }
+	encryptedSymmetricKey = encryptedSymmetricKey[:n]
+	decryptedSymmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey)
+	if err != nil {
+		return fmt.Errorf("decryption of symmetric key failed: %w", err)
+	}
 
-    s.encryption.sharedKey = decryptedSymmetricKey
+	s.encryption.sharedKey = decryptedSymmetricKey
 
-    fmt.Println("Key exchange completed successfully with connection id: ", s.id)
+	fmt.Println("Key exchange completed successfully with connection id: ", s.id)
 	s.keysExchanged = true
-    return nil
+	return nil
 }
-
 
 func (s *ServerConnection) StartKeyExchange() error {
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&s.encryption.privateKey.PublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to marshal public key: %w", err) 
+		return fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
 	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
@@ -479,12 +456,12 @@ func (s *ServerConnection) StartKeyExchange() error {
 		Bytes: publicKeyBytes,
 	})
 
-	_, err = s.conn.Write(publicKeyPEM) 
+	_, err = s.conn.Write(publicKeyPEM)
 	return err
 }
 
 func (s *ServerConnection) CompleteKeyExchange() error {
-	encryptedSymmetricKey := make([]byte, 256) 
+	encryptedSymmetricKey := make([]byte, 256)
 	n, err := s.readWriter.Read(encryptedSymmetricKey)
 	if err != nil {
 		return err

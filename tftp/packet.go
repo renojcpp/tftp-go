@@ -3,8 +3,8 @@ package tftp
 import (
 	"bytes"
 	"encoding/binary"
-	"strings"
 	"fmt"
+	"strings"
 )
 
 type HeaderId uint16
@@ -22,9 +22,9 @@ const (
 	EOS uint8 = iota
 )
 
-type tftpstruct interface {
-	RRQPacket | WRQPacket | DATPacket | ACKPacket | ERRPacket
-}
+// type tftpstruct interface {
+// 	RRQPacket | WRQPacket | DATPacket | ACKPacket | ERRPacket
+// }
 
 type Packet []byte
 type RRQPacket Packet
@@ -85,25 +85,24 @@ func (p Packet) Type() HeaderId {
 }
 
 func Encode(fields []interface{}) Packet {
-    buf := new(bytes.Buffer)
+	buf := new(bytes.Buffer)
 
-    for _, v := range fields {
-        switch val := v.(type) {
-        case string:
+	for _, v := range fields {
+		switch val := v.(type) {
+		case string:
 			encodedString := append([]byte(val), 0)
-			buf.Write(encodedString) 
-        default:
-            err := binary.Write(buf, binary.BigEndian, v)
-            if err != nil {
-                fmt.Println(err)
-                panic("failed to write value")
-            }
-        }
-    }
+			buf.Write(encodedString)
+		default:
+			err := binary.Write(buf, binary.BigEndian, v)
+			if err != nil {
+				fmt.Println(err)
+				panic("failed to write value")
+			}
+		}
+	}
 
-    return buf.Bytes()
+	return buf.Bytes()
 }
-
 
 // func Decode[k ~[]byte](p k) Packet {
 // 	reader := bytes.NewReader(p)

@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/renojcpp/tftp-go/tftp"
 	"net"
+
+	"github.com/renojcpp/tftp-go/tftp"
 )
 
 type Server struct {
@@ -37,5 +38,4 @@ func (s *Server) Start() {
 func (s *Server) HandleConnection() {
 	defer s.clientLimit.decreaseClientCount()
 	tftp.StartServer(s.listener, s.port)
-
 }
