@@ -22,6 +22,7 @@ type Server struct {
 	clientLimit *Clientlimit
 	port        string
 	rootPath    string
+	ipAddress   string
 }
 
 // todo: need to send errpackets
@@ -47,6 +48,7 @@ func NewServer(listener net.Listener, maxClients int, port string, rootPath stri
 		clientLimit: NewClientLimit(maxClients),
 		port:        port,
 		rootPath:    rootPath,
+		ipAddress:   listener.Addr().String(),
 	}
 }
 
@@ -356,7 +358,7 @@ func (s *ServerConnection) NextRequest() {
 }
 
 func (s *Server) Start() {
-	fmt.Println("Server Listening on port " + s.port)
+	fmt.Println("Server Listening on " + s.ipAddress)
 	defer s.listener.Close()
 	for {
 		conn, err := s.listener.Accept()
