@@ -321,7 +321,7 @@ func (s *ServerConnection) NextRequest() {
 			n, err := s.readWriter.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed\n")
+					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
 				}
 				break
 			}
@@ -330,7 +330,7 @@ func (s *ServerConnection) NextRequest() {
 			decoded, err = s.ReceivePacket()
 			if err != nil {
 				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed\n")
+					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
 				}
 				break
 			}
@@ -360,6 +360,7 @@ func (s *ServerConnection) NextRequest() {
 func (s *Server) Start() {
 	fmt.Println("Server Listening on " + s.ipAddress)
 	defer s.listener.Close()
+	connID := 1
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -367,11 +368,11 @@ func (s *Server) Start() {
 			continue
 		}
 
-		go s.handleConnection(conn)
+		go s.handleConnection(conn, &connID)
 	}
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(conn net.Conn, connID *int) {
 	defer conn.Close()
 	if err := s.clientLimit.increaseClientCount(); err != nil {
 		fmt.Println("Client limit has been reached!")
@@ -379,11 +380,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 	defer s.clientLimit.decreaseClientCount()
 
-	tftpConn, err := s.NewTFTPConnection(conn, 1)
+	tftpConn, err := s.NewTFTPConnection(conn, *connID)
 	if err != nil {
 		fmt.Println("Error creating server connection:", err)
 		return
 	}
+	*connID++
 
 	if err := tftpConn.Handshake(); err != nil {
 		fmt.Println("Handshake failed:", err)
