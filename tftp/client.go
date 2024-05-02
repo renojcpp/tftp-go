@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"crypto/rand"
 	"crypto/rsa"
+	"time"
 )
 
 type cstatus int
@@ -237,15 +238,14 @@ func (c *Client) dir() error {
 }
 
 func (c *Client) Handshake() error {
-	var b bytes.Buffer
-	_, err := c.reader.WriteTo(&b)
+	buf := make([]byte, 512)
+	_, err := c.reader.Read(buf)
 
 	if err != nil {
 		return err
 	}
 
-	decoded := Packet(b.Bytes())
-
+	decoded := Packet(buf)
 	switch decoded.Type() {
 	case DAT:
 		dat := DATPacket(decoded)
@@ -253,6 +253,7 @@ func (c *Client) Handshake() error {
 		if dat.Block() != 1 {
 			return fmt.Errorf("Unexpected block number: %d", dat.Block())
 		}
+		fmt.Println("Handshake dat block # 1 received")
 
 		ack := EncodeACK(1)
 		_, err := c.conn.Write(ack)
@@ -260,11 +261,11 @@ func (c *Client) Handshake() error {
 		if err != nil {
 			return err
 		}
+		fmt.Println("Acknowledge of block # 1 sent")
 		return nil
 	default:
 		return errors.New("unexpected header")
 	}
-
 }
 
 func NewClient(hostname string, port int) (*Client, error) {
@@ -280,6 +281,11 @@ func NewClient(hostname string, port int) (*Client, error) {
 
 	c := &Client{conn, *bufio.NewReader(conn), ok, encryption}
 
+	if err := c.Handshake(); err != nil {
+        conn.Close()
+        return nil, fmt.Errorf("handshake failed: %v", err)
+    }
+
 	return c, nil
 }
 
@@ -292,6 +298,7 @@ func NewClient(hostname string, port int) (*Client, error) {
 // }
 
 func RunClientLoop(client *Client) error {
+	time.Sleep(1 * time.Second)
 	err := client.ExchangeKeys()
 	if err != nil{
 		fmt.Println("Error exchanging keys: ", err)

@@ -26,6 +26,16 @@ type Server struct {
 	rootPath	string
 }
 
+// todo: need to send errpackets
+type ServerConnection struct {
+	server *Server
+	conn       net.Conn
+	readWriter bufio.ReadWriter
+	id         int
+	encryption *EncryptionManager
+	keysExchanged bool
+}
+
 func NewServer(listener net.Listener, maxClients int, port string, rootPath string) *Server {
 	if rootPath != ""{
 		err := createRootDirectory(rootPath)
@@ -59,15 +69,6 @@ func createRootDirectory(rootDir string) error{
 	return nil
 }
 
-// todo: need to send errpackets
-type ServerConnection struct {
-	server *Server
-	conn       net.Conn
-	readWriter bufio.ReadWriter
-	id         int
-	encryption *EncryptionManager
-	keysExchanged bool
-}
 
 func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 	writer := bufio.NewWriter(c)
@@ -91,7 +92,6 @@ func(s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error)
 	return server, nil
 }
 
-//Need to use encryption here
 func (s *ServerConnection) SendError(str string) error {
 	errp := EncodeErr(str)
 	err := s.SendPacket(errp)
@@ -173,17 +173,20 @@ func (s *ServerConnection) Handshake() error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("Handshake dat block # 1 sent")
 
-	var resp bytes.Buffer
-	_, err = s.readWriter.WriteTo(&resp)
+	buf := make([]byte, 512)
+	_, err = s.readWriter.Read(buf)
+
 	if err != nil {
 		return err
 	}
 
-	decode := Packet(resp.Bytes())
+	decoded := Packet(buf)
 
-	switch decode.Type() {
+	switch decoded.Type() {
 	case ACK:
+		fmt.Println("Handshake Acknowledgement Received")
 		return nil
 	default:
 		return errors.New("Unexpected block from handshake")
@@ -336,7 +339,7 @@ func (s *ServerConnection) NextRequest() {
 				break
 			}
 		}
-		
+
 		switch decoded.Type() {
 		case RRQ:
 			rrq := RRQPacket(decoded)
@@ -399,6 +402,12 @@ func (s *Server) Start(){
 		if err != nil{
 			log.Println("Error creating server connection:", err)
 		}
+
+		if err := tftpConn.Handshake(); err != nil {
+            log.Println("Handshake failed:", err)
+            conn.Close()
+            continue
+        }
         go tftpConn.NextRequest()
     }
 }
