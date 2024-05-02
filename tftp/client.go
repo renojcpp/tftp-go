@@ -112,8 +112,6 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 // receiving ACK packets. Code can be reused with WriteRRQStream.
 func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	wrq := EncodeWRQ(filename)
-	// _, err := c.conn.Write(wrq)
-	// err := SendPacket(c.conn, wrq)
 	err := c.SendPacket(wrq)
 	if err != nil {
 		return err
@@ -262,13 +260,13 @@ func NewClient(hostname string, port int) (*Client, error) {
 	return c, nil
 }
 
-func (client *Client) ConnectionIsNotOpen() bool{
-	_, err := client.conn.Write([]byte{0})  //Test Byte
-	if err != nil {
-		return true
-	}
-	return false 
-}
+// func (client *Client) ConnectionIsNotOpen() bool{
+// 	_, err := client.conn.Write([]byte{0})  //Test Byte
+// 	if err != nil {
+// 		return true
+// 	}
+// 	return false 
+// }
 
 func RunClientLoop(client *Client) error {
 	err := client.ExchangeKeys()
@@ -297,10 +295,10 @@ func RunClientLoop(client *Client) error {
             fmt.Println("Error executing command:", err)
         }
 
-		if client.ConnectionIsNotOpen(){
-			fmt.Println("Connection Terminated")
-			break
-		}
+		// if client.ConnectionIsNotOpen(){
+		// 	fmt.Println("Connection Terminated")
+		// 	break
+		// }
     }
 	return nil
 }
