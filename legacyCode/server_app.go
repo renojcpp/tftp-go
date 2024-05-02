@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/renojcpp/tftp-go/tftp"
 	"net"
+
+	"github.com/renojcpp/tftp-go/tftp"
 )
 
 const (
@@ -17,7 +18,6 @@ func main() {
 	conn, err := net.Listen("tcp", fmt.Sprint(defaultPort))
 	if err != nil {
 		fmt.Println("Error in listening")
-
 	}
 
 	for {

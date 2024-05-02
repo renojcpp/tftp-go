@@ -63,7 +63,7 @@ func readArguments(cmd command, args []argument) ([]argument, error) {
 		return nil, nil
 	case "get", "put":
 		if len(args) > 1 {
-			return args[0:1], errors.ErrUnsupported
+			return args[0:2], nil
 		}
 		return args[0:1], nil
 	default:
