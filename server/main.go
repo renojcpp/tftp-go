@@ -19,9 +19,6 @@ func main() {
 		log.Fatal("Error starting server:", err)
 	}
 
-	tcpAddr := listener.Addr().(*net.TCPAddr)
-	log.Println("Server is running on:", tcpAddr.IP.String())
-
 	server := tftp.NewServer(listener, 5, *port, *rootPath)
 	server.Start()
 }
