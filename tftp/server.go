@@ -105,8 +105,11 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 	file, err := os.OpenFile(s.server.rootPath+filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 
 	if err != nil {
-		fmt.Println(err)
-		return err
+		serverRWQErr := &throwErrors{
+			err, "Opening File",
+		}
+		// fmt.Println(err)
+		return serverRWQErr
 	}
 	defer file.Close()
 
@@ -116,27 +119,39 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		ack := EncodeACK(ackn)
 		err := s.SendPacket(ack)
 		if err != nil {
-			return err
+			serverSendPackErr := &throwErrors{
+				err, "Server Sending Packet",
+			}
+			return serverSendPackErr
 		}
 		fmt.Println("Sending Acknowledgment block #", ackn)
 		ackn += 1
 
 		decoded, err := s.ReceivePacket()
 		if err != nil {
-			return err
+			serverReceivePackErr := &throwErrors{
+				err, "Server Receiving Packet",
+			}
+			return serverReceivePackErr
 		}
 
 		switch decoded.Type() {
 		case DAT:
 			done, err = HandleDAT(decoded, ackn)
 			if err != nil {
-				fmt.Println(err)
-				return err
+				serverHandleDATErr := &throwErrors{
+					err, "Server handling data",
+				}
+				// fmt.Println(err)
+				return serverHandleDATErr
 			}
 			d := DATPacket(decoded)
 			err = binary.Write(file, binary.NativeEndian, d.Data())
 			if err != nil {
-				return err
+				serverWriteErr := &throwErrors{
+					err, "Server writing",
+				}
+				return serverWriteErr
 			}
 			fmt.Println("Data written block #", ackn)
 		default:
@@ -148,7 +163,10 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			ack := EncodeACK(ackn)
 			err := s.SendPacket(ack)
 			if err != nil {
-				return err
+				serverACKWriteErr := &throwErrors{
+					err, "Server ACK and writing",
+				}
+				return serverACKWriteErr
 			}
 			fmt.Println("Sending Acknowledgment block #", ackn)
 			fmt.Println("Write request fulfilled. End of data stream.")

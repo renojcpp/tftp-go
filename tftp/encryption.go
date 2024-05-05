@@ -10,8 +10,8 @@ import (
 )
 
 type EncryptionManager struct {
-	privateKey *rsa.PrivateKey 
-	sharedKey  []byte           
+	privateKey *rsa.PrivateKey
+	sharedKey  []byte
 }
 
 func NewEncryptionManager() (*EncryptionManager, error) {
@@ -20,10 +20,13 @@ func NewEncryptionManager() (*EncryptionManager, error) {
 		return nil, err
 	}
 
-	sharedKey := make([]byte, 32) 
+	sharedKey := make([]byte, 32)
 	_, err = rand.Reader.Read(sharedKey)
 	if err != nil {
-		return nil, err
+		readKeyErr := &throwErrors{
+			err, "Reading Shared Key",
+		}
+		return nil, readKeyErr
 	}
 
 	return &EncryptionManager{
@@ -33,23 +36,29 @@ func NewEncryptionManager() (*EncryptionManager, error) {
 }
 
 func rsaEncrypt(publicKey *rsa.PublicKey, message []byte) ([]byte, error) {
-	return rsa.EncryptPKCS1v15(rand.Reader, publicKey, message) 
+	return rsa.EncryptPKCS1v15(rand.Reader, publicKey, message)
 }
 
 func rsaDecrypt(privateKey *rsa.PrivateKey, ciphertext []byte) ([]byte, error) {
-	return rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)  
+	return rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
 }
 
 func encryptPacket(packet []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		encryptCiphErr := &throwErrors{
+			err, "Encrypt Cipher Key",
+		}
+		return nil, encryptCiphErr
 	}
-	ciphertext := make([]byte, aes.BlockSize + len(packet))
+	ciphertext := make([]byte, aes.BlockSize+len(packet))
 	iv := ciphertext[:aes.BlockSize]
 	_, err = io.ReadFull(rand.Reader, iv)
 	if err != nil {
-		return nil, err
+		readCiphErr := &throwErrors{
+			err, "Reading Cipher",
+		}
+		return nil, readCiphErr
 	}
 	stream := cipher.NewCFBEncrypter(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], packet)
@@ -59,7 +68,10 @@ func encryptPacket(packet []byte, key []byte) ([]byte, error) {
 func decryptPacket(packet []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		decryptCiphErr := &throwErrors{
+			err, "Decrypt Cipher Key",
+		}
+		return nil, decryptCiphErr
 	}
 	if len(packet) < aes.BlockSize {
 		return nil, fmt.Errorf("ciphertext too short")

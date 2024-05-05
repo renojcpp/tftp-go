@@ -16,12 +16,15 @@ func (d *DATStream) Next() (DATPacket, error) {
 	n, err := d.r.Read(buf)
 
 	if err != nil {
-		if err == io.EOF{
-			dat :=  EncodeDAT(d.block, uint32(0), buf[:0])
+		if err == io.EOF {
+			dat := EncodeDAT(d.block, uint32(0), buf[:0])
 			d.block += 1
 			return DATPacket(dat), nil
-		}else{
-			return nil, err
+		} else {
+			readErr := &throwErrors{
+				err, "Reading DATStream",
+			}
+			return nil, readErr
 		}
 	}
 
