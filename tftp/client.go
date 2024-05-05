@@ -47,6 +47,7 @@ func (client *Client) Command(c *Command) error {
 }
 
 func (c *Client) quit() error {
+	c.status = destroyed
 	return c.conn.Close()
 }
 
@@ -317,6 +318,11 @@ func RunClientLoop(client *Client) error {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
+		if client.status == destroyed {
+			fmt.Println("Connection Terminated")
+			break
+		}
+
 		fmt.Print("client> ")
 		if !scanner.Scan() {
 			break
@@ -331,12 +337,12 @@ func RunClientLoop(client *Client) error {
 
 		err = client.Command(command)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok {
-				if !netErr.Temporary() || netErr.Timeout() {
-					fmt.Println("Coonnection lost:", err)
-					return err
-				}
-			}
+			// if netErr, ok := err.(net.Error); ok {
+			// 	if !netErr.Temporary() || netErr.Timeout() {
+			// 		fmt.Println("Coonnection lost:", err)
+			// 		return err
+			// 	}
+			// }
 			fmt.Println("Error executing command:", err)
 		}
 
