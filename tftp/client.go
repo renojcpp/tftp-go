@@ -60,7 +60,10 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	// may need to do something extra about this
 	err := c.SendPacket(rrq)
 	if err != nil {
-		return err
+		rrqPackErr := &throwErrors{
+			err, "Sending read request packet",
+		}
+		return rrqPackErr
 	}
 
 	done := false
@@ -68,21 +71,30 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	for !done {
 		dec, err := c.ReceivePacket()
 		if err != nil {
-			return err
+			receivePackErr := &throwErrors{
+				err, "Receiving packet",
+			}
+			return receivePackErr
 		}
 
 		switch dec.Type() {
 		case DAT:
 			done, err = HandleDAT(dec, ackn)
 			if err != nil {
-				return err
+				datPackErr := &throwErrors{
+					err, "Handling data packet",
+				}
+				return datPackErr
 			}
 
 			p := DATPacket(dec)
 			err = binary.Write(w, binary.NativeEndian, p.Data())
 
 			if err != nil {
-				return err
+				writingErr := &throwErrors{
+					err, "Writing data",
+				}
+				return writingErr
 			}
 			fmt.Println("Data block #", ackn, "read")
 		case ERR:
@@ -95,7 +107,10 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		ack := EncodeACK(ackn)
 		err = c.SendPacket(ack)
 		if err != nil {
-			return err
+			ackPackErr := &throwErrors{
+				err, "Sending ACK Packet",
+			}
+			return ackPackErr
 		}
 		fmt.Println("Acknowledge block #", ackn, "sent")
 
@@ -115,7 +130,10 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	wrq := EncodeWRQ(filename)
 	err := c.SendPacket(wrq)
 	if err != nil {
-		return err
+		wrqPackErr := &throwErrors{
+			err, "Seending write request packet",
+		}
+		return wrqPackErr
 	}
 
 	stream := NewDATStream(r)
@@ -124,7 +142,10 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	for !done {
 		dec, err := c.ReceivePacket()
 		if err != nil {
-			return err
+			receivePackErr := &throwErrors{
+				err, "Receiving Packet",
+			}
+			return receivePackErr
 		}
 
 		switch dec.Type() {
@@ -144,12 +165,18 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 
 		dat, err := stream.Next()
 		if err != nil {
-			return err
+			nextDataErr := &throwErrors{
+				err, "Retrieving data",
+			}
+			return nextDataErr
 		}
 		err = c.SendPacket(Packet(dat))
 
 		if err != nil {
-			return err
+			datPackErr := &throwErrors{
+				err, "Sending data packet",
+			}
+			return datPackErr
 		}
 		fmt.Println("Data block #", ackn, "sent")
 
@@ -159,7 +186,10 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			//Code is redudant to above so may want to modularize
 			dec, err := c.ReceivePacket()
 			if err != nil {
-				return err
+				finalAckErr := &throwErrors{
+					err, "Receiving final ACK",
+				}
+				return finalAckErr
 			}
 			switch dec.Type() {
 			case ACK:
@@ -193,18 +223,27 @@ func (c *Client) get(args []argument) error {
 
 	err := c.WriteReadRequest(&buffer, args[0])
 	if err != nil {
-		return err
+		getErr := &throwErrors{
+			err, "WriteRead request",
+		}
+		return getErr
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
-		return err
+		openErr := &throwErrors{
+			err, "OpenFile request",
+		}
+		return openErr
 	}
 	defer file.Close()
 
 	_, err = buffer.WriteTo(file)
 	if err != nil {
-		return err
+		writeErr := &throwErrors{
+			err, "WriteTo request",
+		}
+		return writeErr
 	}
 
 	return nil
@@ -215,7 +254,10 @@ func (c *Client) put(args []argument) error {
 	file, err := os.Open(args[0])
 
 	if err != nil {
-		return err
+		openFileErr := &throwErrors{
+			err, "OpenFile request",
+		}
+		return openFileErr
 	}
 	defer file.Close()
 
@@ -228,7 +270,10 @@ func (c *Client) put(args []argument) error {
 	err = c.WriteWriteRequest(file, filename)
 
 	if err != nil {
-		return err
+		getErr := &throwErrors{
+			err, "WwriteWrite Request",
+		}
+		return getErr
 	}
 
 	return nil
@@ -238,7 +283,10 @@ func (c *Client) dir() error {
 	err := c.WriteReadRequest(os.Stdout, "")
 
 	if err != nil {
-		return err
+		dirErr := &throwErrors{
+			err, "DIR request",
+		}
+		return dirErr
 	}
 
 	return nil
@@ -249,7 +297,10 @@ func (c *Client) Handshake() error {
 	_, err := c.reader.Read(buf)
 
 	if err != nil {
-		return err
+		handshakeErr := &throwErrors{
+			err, "Handshake",
+		}
+		return handshakeErr
 	}
 
 	decoded := Packet(buf)
@@ -266,7 +317,10 @@ func (c *Client) Handshake() error {
 		_, err := c.conn.Write(ack)
 
 		if err != nil {
-			return err
+			handshakeACKErr := &throwErrors{
+				err, "Handshake Acknowledge",
+			}
+			return handshakeACKErr
 		}
 		fmt.Println("Acknowledge of handshake sent")
 
@@ -286,7 +340,10 @@ func (c *Client) Handshake() error {
 func NewClient(hostname string, port int) (*Client, error) {
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
 	if err != nil {
-		return nil, err
+		newClientErr := &throwErrors{
+			err, "Creating Client",
+		}
+		return nil, newClientErr
 	}
 
 	tcpConn, connOk := conn.(*net.TCPConn)
@@ -300,7 +357,10 @@ func NewClient(hostname string, port int) (*Client, error) {
 
 	encryption, err := NewEncryptionManager()
 	if err != nil {
-		return nil, err
+		encryptErr := &throwErrors{
+			err, "Encryption",
+		}
+		return nil, encryptErr
 	}
 
 	c := &Client{conn, *bufio.NewReader(conn), ok, encryption}
@@ -358,11 +418,17 @@ func (c *Client) ReceivePacket() (Packet, error) {
 	buf := make([]byte, 1024)
 	n, err := c.reader.Read(buf)
 	if err != nil {
-		return nil, err
+		receivePackErr := &throwErrors{
+			err, "Receiving Packet",
+		}
+		return nil, receivePackErr
 	}
 	packet, err := decryptPacket(buf[:n], c.encryption.sharedKey)
 	if err != nil {
-		return nil, err
+		decryptErr := &throwErrors{
+			err, "Decrypting Packet",
+		}
+		return nil, decryptErr
 	}
 	return Packet(packet), nil
 }
@@ -370,11 +436,17 @@ func (c *Client) ReceivePacket() (Packet, error) {
 func (c *Client) SendPacket(packet Packet) error {
 	encryptedPacket, err := encryptPacket(packet, c.encryption.sharedKey)
 	if err != nil {
-		return err
+		encryptErr := &throwErrors{
+			err, "Encrypting Packet",
+		}
+		return encryptErr
 	}
 	_, err = c.conn.Write(encryptedPacket)
 	if err != nil {
-		return err
+		writeEncryptErr := &throwErrors{
+			err, "Writing to encrypted packet",
+		}
+		return writeEncryptErr
 	}
 	return nil
 }
@@ -413,21 +485,33 @@ func (c *Client) CompleteKeyExchange(publicKeyPEM []byte) error {
 
 	serverPublicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return err
+		publicKeyErr := &throwErrors{
+			err, "Server Public Key",
+		}
+		return publicKeyErr
 	}
 
 	symmetricKey := make([]byte, 32)
 	_, err = rand.Reader.Read(symmetricKey)
 	if err != nil {
-		return err
+		symmeKeyErr := &throwErrors{
+			err, "Symmetric Key Reading",
+		}
+		return symmeKeyErr
 	}
 
 	encryptedSymmetricKey, err := rsaEncrypt(serverPublicKey.(*rsa.PublicKey), symmetricKey)
 	if err != nil {
-		return err
+		rsaEncryptErr := &throwErrors{
+			err, "RSA Encryption",
+		}
+		return rsaEncryptErr
 	}
 
 	_, err = c.conn.Write(encryptedSymmetricKey)
 	c.encryption.sharedKey = symmetricKey
-	return err
+	encryptedSymmKeyErr := &throwErrors{
+		err, "Encrypted Symmtetric Key Writing",
+	}
+	return encryptedSymmKeyErr
 }
