@@ -7,21 +7,6 @@ import (
 
 type command string
 
-func parseCommand(s string) (command, bool) {
-	switch strings.ToLower(s) {
-	case "get":
-		return Get, true
-	case "dir":
-		return Dir, true
-	case "put":
-		return Put, true
-	case "quit":
-		return Quit, true
-	default:
-		return Nil, false
-	}
-}
-
 type argument = string
 
 const (
@@ -37,12 +22,20 @@ type Command struct {
 	args []argument
 }
 
-// var commands = map[command]struct{}{
-// 	Get:  {},
-// 	Dir:  {},
-// 	Put:  {},
-// 	Quit: {},
-// }
+func parseCommand(s string) (command, bool) {
+	switch strings.ToLower(s) {
+	case "get":
+		return Get, true
+	case "dir":
+		return Dir, true
+	case "put":
+		return Put, true
+	case "quit":
+		return Quit, true
+	default:
+		return Nil, false
+	}
+}
 
 func readStatement(stmt string) (command, []argument, error) {
 	stmt = strings.TrimSpace(stmt)

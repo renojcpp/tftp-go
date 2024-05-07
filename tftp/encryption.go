@@ -9,6 +9,9 @@ import (
 	"io"
 )
 
+
+// ========= Struct for Key Generation and Storage =========
+
 type EncryptionManager struct {
 	privateKey *rsa.PrivateKey
 	sharedKey  []byte
@@ -35,6 +38,8 @@ func NewEncryptionManager() (*EncryptionManager, error) {
 	}, nil
 }
 
+// ========= RSA Encryption / Decryption =========
+
 func rsaEncrypt(publicKey *rsa.PublicKey, message []byte) ([]byte, error) {
 	return rsa.EncryptPKCS1v15(rand.Reader, publicKey, message)
 }
@@ -42,6 +47,10 @@ func rsaEncrypt(publicKey *rsa.PublicKey, message []byte) ([]byte, error) {
 func rsaDecrypt(privateKey *rsa.PrivateKey, ciphertext []byte) ([]byte, error) {
 	return rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
 }
+
+
+
+// ========= AES Encryption / Decryption =========
 
 func encryptPacket(packet []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)

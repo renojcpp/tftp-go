@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+
+// ========= Server Structures =========
+
 type Server struct {
 	listener    net.Listener
 	clientLimit *Clientlimit
@@ -33,6 +36,9 @@ type ServerConnection struct {
 	encryption    *EncryptionManager
 	keysExchanged bool
 }
+
+
+// ========= Server Initialization =========
 
 func NewServer(listener net.Listener, maxClients int, port string, rootPath string) *Server {
 	if rootPath != "" {
@@ -68,6 +74,50 @@ func createRootDirectory(rootDir string) error {
 	return nil
 }
 
+// ========= Server Startup and Loop =========
+
+func (s *Server) Start() {
+	s.printAddresses()
+	defer s.listener.Close()
+	connID := 1
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			log.Println("Error accepting connection:", err)
+			continue
+		}
+		go s.handleConnection(conn, &connID)
+	}
+}
+
+func (s *Server) handleConnection(conn net.Conn, connID *int) {
+	defer conn.Close()
+	if err := s.clientLimit.increaseClientCount(); err != nil {
+		fmt.Println("Client limit has been reached!")
+		errPacket := EncodeErr("client limit has been reached!")
+		conn.Write(errPacket)
+		return
+	}
+	defer s.clientLimit.decreaseClientCount()
+
+	tftpConn, err := s.NewTFTPConnection(conn, *connID)
+	if err != nil {
+		fmt.Println("Error creating server connection:", err)
+		return
+	}
+	*connID++
+
+	if err := tftpConn.Handshake(); err != nil {
+		fmt.Println("Handshake failed:", err)
+		return
+	}
+
+	tftpConn.NextRequest()
+}
+
+
+// ========= Server Connection Initialization =========
+
 func (s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
 	writer := bufio.NewWriter(c)
 	reader := bufio.NewReader(c)
@@ -90,14 +140,89 @@ func (s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error
 	return server, nil
 }
 
-func (s *ServerConnection) SendError(str string) error {
-	errp := EncodeErr(str)
-	err := s.SendPacket(errp)
+func (s *ServerConnection) Handshake() error {
+	msg := "Hello!"
+	packet := EncodeDAT(1, uint32(len(msg)), []byte(msg))
+
+	_, err := s.conn.Write(packet)
 	if err != nil {
-		return fmt.Errorf("error sending err packet: %w", err)
+		return err
 	}
-	return nil
+	fmt.Println("Handshake Dat block # 1 sent")
+
+	buf := make([]byte, 512)
+	_, err = s.readWriter.Read(buf)
+
+	if err != nil {
+		return err
+	}
+
+	decoded := Packet(buf)
+
+	switch decoded.Type() {
+	case ACK:
+		fmt.Println("Handshake acknowledgement received")
+		err := s.HandleKeyExchange()
+		if err != nil {
+			s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
+		}
+		return nil
+	default:
+		s.conn.Close()
+		return errors.New("unexpected block from handshake")
+	}
 }
+
+// ========= Server Connection Request Loop =========
+
+func (s *ServerConnection) NextRequest() {
+	var decoded Packet
+	var err error
+	for {
+		if !s.keysExchanged {
+			buf := make([]byte, 1024)
+			n, err := s.readWriter.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
+				}
+				break
+			}
+			decoded = Packet(buf[:n])
+		} else {
+			decoded, err = s.ReceivePacket()
+			if err != nil {
+				if err == io.EOF {
+					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
+				}
+				break
+			}
+		}
+
+		switch decoded.Type() {
+		case RRQ:
+			rrq := RRQPacket(decoded)
+			err = s.ReadReadRequest(rrq.Filename())
+			if err != nil {
+				fmt.Println("Error executing RRQ:", err)
+			}
+		case WRQ:
+			wrq := WRQPacket(decoded)
+			err = s.ReadWriteRequest(wrq.Filename())
+			if err != nil {
+				fmt.Println("Error executing WRQ:", err)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
+			break
+		}
+	}
+	s.conn.Close()
+}
+
+
+
+// ========= TFTP Request Handlers =========
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {
 	fmt.Println("Processing read request")
@@ -172,84 +297,6 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 	}
 
 	return nil
-}
-
-func (s *ServerConnection) Handshake() error {
-	msg := "Hello!"
-	packet := EncodeDAT(1, uint32(len(msg)), []byte(msg))
-
-	_, err := s.conn.Write(packet)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Handshake Dat block # 1 sent")
-
-	buf := make([]byte, 512)
-	_, err = s.readWriter.Read(buf)
-
-	if err != nil {
-		return err
-	}
-
-	decoded := Packet(buf)
-
-	switch decoded.Type() {
-	case ACK:
-		fmt.Println("Handshake acknowledgement received")
-		err := s.HandleKeyExchange()
-		if err != nil {
-			s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
-		}
-		return nil
-	default:
-		s.conn.Close()
-		return errors.New("unexpected block from handshake")
-	}
-}
-
-// func returnUserIdentifiers(fileInfo os.FileInfo) (string, string) {
-// 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-// 	if !ok {
-// 		log.Fatal("Failed to extract file system info")
-// 	}
-// 	uid := stat.Uid
-// 	gid := stat.Gid
-// 	userInfo, err := user.LookupId(fmt.Sprintf("%d", uid))
-// 	if err != nil {
-// 		log.Fatal("Error looking up user:", err)
-// 	}
-
-// 	groupInfo, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
-// 	if err != nil {
-// 		log.Fatal("Error looking up group:", err)
-// 	}
-
-// 	return userInfo.Username, groupInfo.Name
-// }
-
-func buildDirectoryListing(file os.DirEntry) (string, error) {
-	var builder strings.Builder
-
-	info, err := os.Stat(file.Name())
-	if err != nil {
-		fmt.Println("Error accessing file:", err)
-		return "", err
-	}
-	builder.WriteString(info.Mode().String())
-	// Comment userID, groupID lines if not running on windows
-	// userID, groupID := returnUserIdentifiers(info)
-	// builder.WriteString("  ")
-	// builder.WriteString(userID)
-	// builder.WriteString(" ")
-	// builder.WriteString(groupID)
-	// builder.WriteString(" ")
-	builder.WriteString(fmt.Sprintf("%10d", info.Size()))
-	builder.WriteString(" ")
-	builder.WriteString(info.ModTime().Format(time.RFC822))
-	builder.WriteString(" ")
-	builder.WriteString(file.Name())
-
-	return builder.String(), nil
 }
 
 func (s *ServerConnection) ReadReadRequest(filename string) error {
@@ -332,51 +379,67 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	return nil
 }
 
-func (s *ServerConnection) NextRequest() {
-	var decoded Packet
-	var err error
-	for {
-		if !s.keysExchanged {
-			buf := make([]byte, 1024)
-			n, err := s.readWriter.Read(buf)
-			if err != nil {
-				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
-				}
-				break
-			}
-			decoded = Packet(buf[:n])
-		} else {
-			decoded, err = s.ReceivePacket()
-			if err != nil {
-				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
-				}
-				break
-			}
-		}
 
-		switch decoded.Type() {
-		case RRQ:
-			rrq := RRQPacket(decoded)
-			err = s.ReadReadRequest(rrq.Filename())
-			if err != nil {
-				fmt.Println("Error executing RRQ:", err)
-			}
-		case WRQ:
-			wrq := WRQPacket(decoded)
-			err = s.ReadWriteRequest(wrq.Filename())
-			if err != nil {
-				fmt.Println("Error executing WRQ:", err)
-			}
-		default:
-			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
-			break
-		}
+// ========= Send / Recieve Functions =========
+
+func (s *ServerConnection) SendPacket(packet Packet) error {
+	encryptedPacket, err := encryptPacket(packet, s.encryption.sharedKey)
+	if err != nil {
+		return err
 	}
-	s.conn.Close()
+	_, err = s.conn.Write(encryptedPacket)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
+func (s *ServerConnection) ReceivePacket() (Packet, error) {
+	buf := make([]byte, 1024)
+	n, err := s.readWriter.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	packet, err := decryptPacket(buf[:n], s.encryption.sharedKey)
+	if err != nil {
+		return nil, err
+	}
+	return Packet(packet), nil
+}
+
+
+func (s *ServerConnection) SendError(str string) error {
+	errp := EncodeErr(str)
+	err := s.SendPacket(errp)
+	if err != nil {
+		return fmt.Errorf("error sending err packet: %w", err)
+	}
+	return nil
+}
+
+
+// ========= Utility Functions =========
+
+//Used in ReadReadRequest
+func buildDirectoryListing(file os.DirEntry) (string, error) {
+	var builder strings.Builder
+
+	info, err := os.Stat(file.Name())
+	if err != nil {
+		fmt.Println("Error accessing file:", err)
+		return "", err
+	}
+	builder.WriteString(info.Mode().String())
+	builder.WriteString(fmt.Sprintf("%10d", info.Size()))
+	builder.WriteString(" ")
+	builder.WriteString(info.ModTime().Format(time.RFC822))
+	builder.WriteString(" ")
+	builder.WriteString(file.Name())
+
+	return builder.String(), nil
+}
+
+//Used in server.Start()
 func (s *Server) printAddresses() {
     address := s.ipAddress
     var ipPart, portPart string
@@ -418,74 +481,8 @@ func (s *Server) printAddresses() {
 	fmt.Println()
 }
 
-func (s *Server) Start() {
-	s.printAddresses()
-	defer s.listener.Close()
-	connID := 1
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			log.Println("Error accepting connection:", err)
-			continue
-		}
-		go s.handleConnection(conn, &connID)
-	}
-}
-
-func (s *Server) handleConnection(conn net.Conn, connID *int) {
-	defer conn.Close()
-	if err := s.clientLimit.increaseClientCount(); err != nil {
-		fmt.Println("Client limit has been reached!")
-		errPacket := EncodeErr("client limit has been reached!")
-		conn.Write(errPacket)
-		return
-	}
-	defer s.clientLimit.decreaseClientCount()
-
-	tftpConn, err := s.NewTFTPConnection(conn, *connID)
-	if err != nil {
-		fmt.Println("Error creating server connection:", err)
-		return
-	}
-	*connID++
-
-	if err := tftpConn.Handshake(); err != nil {
-		fmt.Println("Handshake failed:", err)
-		return
-	}
-
-	tftpConn.NextRequest()
-}
-
-/*
-Packet Sending and Encryption methods below
-*/
-
-func (s *ServerConnection) SendPacket(packet Packet) error {
-	encryptedPacket, err := encryptPacket(packet, s.encryption.sharedKey)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn.Write(encryptedPacket)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *ServerConnection) ReceivePacket() (Packet, error) {
-	buf := make([]byte, 1024)
-	n, err := s.readWriter.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	packet, err := decryptPacket(buf[:n], s.encryption.sharedKey)
-	if err != nil {
-		return nil, err
-	}
-	return Packet(packet), nil
-}
-
+// ========= Key Exchange Functions =========
+// Used in handshake
 func (s *ServerConnection) HandleKeyExchange() error {
 	if err := s.StartKeyExchange(); err != nil {
 		log.Println("Error starting key exchange")

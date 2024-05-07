@@ -9,7 +9,6 @@ import (
 
 type HeaderId uint16
 
-//go:generate stringer -Type=HeaderId
 const (
 	RRQ HeaderId = iota + 1
 	WRQ
@@ -21,10 +20,6 @@ const (
 const (
 	EOS uint8 = iota
 )
-
-// type tftpstruct interface {
-// 	RRQPacket | WRQPacket | DATPacket | ACKPacket | ERRPacket
-// }
 
 type Packet []byte
 type RRQPacket Packet
@@ -103,19 +98,6 @@ func Encode(fields []interface{}) Packet {
 
 	return buf.Bytes()
 }
-
-// func Decode[k ~[]byte](p k) Packet {
-// 	reader := bytes.NewReader(p)
-// 	buf := make([]byte, len(p))
-
-// 	err := binary.Read(reader, binary.BigEndian, p)
-
-// 	if err != nil {
-// 		return nil
-// 	}
-
-// 	return buf
-// }
 
 func EncodeRRQ(s string) Packet {
 	d := []any{
