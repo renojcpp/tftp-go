@@ -304,7 +304,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	var buf bytes.Buffer
 
 	if len(filename) == 0 {
-		files, err := os.ReadDir(".")
+		files, err := os.ReadDir(s.server.rootPath+".")
 		if err != nil {
 			return err
 		}
@@ -318,7 +318,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 			buf.WriteByte('\n')
 		}
 	} else {
-		file, err := os.ReadFile(filename)
+		file, err := os.ReadFile(s.server.rootPath + filename)
 		if err != nil {
 			s.SendError(err.Error())
 			return &throwErrors{
