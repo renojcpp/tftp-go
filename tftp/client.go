@@ -331,6 +331,12 @@ func (c *Client) Handshake() error {
 		}
 
 		return nil
+	case ERR:
+		errPacket := ERRPacket(decoded)
+		return &throwErrors{
+			errors.New(errPacket.Errstring()),
+			"Error received during handshake",
+		}
 	default:
 		return errors.New("unexpected header")
 	}

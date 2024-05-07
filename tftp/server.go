@@ -394,6 +394,8 @@ func (s *Server) handleConnection(conn net.Conn, connID *int) {
 	defer conn.Close()
 	if err := s.clientLimit.increaseClientCount(); err != nil {
 		fmt.Println("Client limit has been reached!")
+		errPacket := EncodeErr("Client limit has been reached!")
+		conn.Write(errPacket)
 		return
 	}
 	defer s.clientLimit.decreaseClientCount()
