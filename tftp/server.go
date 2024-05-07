@@ -182,7 +182,7 @@ func (s *ServerConnection) Handshake() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Handshake dat block # 1 sent")
+	fmt.Println("Handshake Dat block # 1 sent")
 
 	buf := make([]byte, 512)
 	_, err = s.readWriter.Read(buf)
@@ -195,7 +195,7 @@ func (s *ServerConnection) Handshake() error {
 
 	switch decoded.Type() {
 	case ACK:
-		fmt.Println("Handshake Acknowledgement Received")
+		fmt.Println("Handshake acknowledgement received")
 		err := s.HandleKeyExchange()
 		if err != nil {
 			s.SendError(fmt.Sprintf("Key exchange failed: %v", err))
@@ -274,7 +274,9 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 		file, err := os.ReadFile(filename)
 		if err != nil {
 			s.SendError(err.Error())
-			return err
+			return &throwErrors{
+				err, "read file",
+			}
 		}
 		buf.Write(file)
 	}
@@ -359,13 +361,13 @@ func (s *ServerConnection) NextRequest() {
 			rrq := RRQPacket(decoded)
 			err = s.ReadReadRequest(rrq.Filename())
 			if err != nil {
-				s.SendError(err.Error())
+				fmt.Println("Error executing RRQ:", err)
 			}
 		case WRQ:
 			wrq := WRQPacket(decoded)
 			err = s.ReadWriteRequest(wrq.Filename())
 			if err != nil {
-				s.SendError(err.Error())
+				fmt.Println("Error executing WRQ:", err)
 			}
 		default:
 			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
@@ -413,6 +415,7 @@ func (s *Server) printAddresses() {
     } else {
         fmt.Printf("Server Listening at %s on port %s\n", ipPart, portPart)
     }
+	fmt.Println()
 }
 
 func (s *Server) Start() {
@@ -433,7 +436,7 @@ func (s *Server) handleConnection(conn net.Conn, connID *int) {
 	defer conn.Close()
 	if err := s.clientLimit.increaseClientCount(); err != nil {
 		fmt.Println("Client limit has been reached!")
-		errPacket := EncodeErr("Client limit has been reached!")
+		errPacket := EncodeErr("client limit has been reached!")
 		conn.Write(errPacket)
 		return
 	}
@@ -503,7 +506,7 @@ func (s *ServerConnection) HandleKeyExchange() error {
 
 	s.encryption.sharedKey = decryptedSymmetricKey
 
-	fmt.Println("Key exchange completed successfully with connection id: ", s.id)
+	fmt.Printf("Key exchange completed successfully with connection id: %d\n\n", s.id)
 	s.keysExchanged = true
 	return nil
 }

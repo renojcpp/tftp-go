@@ -16,7 +16,8 @@ func main() {
 
 	listener, err := net.Listen("tcp", *address+":"+*port)
 	if err != nil {
-		log.Fatal("Error starting server:", err)
+		log.SetFlags(0)
+		log.Fatal("error starting server:", err)
 	}
 
 	server := tftp.NewServer(listener, 5, *port, *rootPath)

@@ -8,5 +8,5 @@ type throwErrors struct {
 }
 
 func (e *throwErrors) Error() string {
-	return fmt.Sprintf("Error Occurred: %s, %v", e.errorMsg, e.actualErr)
+	return fmt.Sprintf("%s: %v", e.errorMsg, e.actualErr)
 }

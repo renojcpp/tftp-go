@@ -60,7 +60,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	err := c.SendPacket(rrq)
 	if err != nil {
 		rrqPackErr := &throwErrors{
-			err, "Sending read request packet",
+			err, "sending read request packet",
 		}
 		return rrqPackErr
 	}
@@ -71,7 +71,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		dec, err := c.ReceivePacket()
 		if err != nil {
 			receivePackErr := &throwErrors{
-				err, "Receiving packet",
+				err, "receiving packet",
 			}
 			return receivePackErr
 		}
@@ -98,7 +98,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 
 			if err != nil {
 				writingErr := &throwErrors{
-					err, "Writing data",
+					err, "writing data",
 				}
 				return writingErr
 			}
@@ -115,7 +115,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 		err = c.SendPacket(ack)
 		if err != nil {
 			ackPackErr := &throwErrors{
-				err, "Sending ACK Packet",
+				err, "sending ACK Packet",
 			}
 			return ackPackErr
 		}
@@ -138,7 +138,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 	err := c.SendPacket(wrq)
 	if err != nil {
 		wrqPackErr := &throwErrors{
-			err, "Seending write request packet",
+			err, "sending write request packet",
 		}
 		return wrqPackErr
 	}
@@ -150,7 +150,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 		dec, err := c.ReceivePacket()
 		if err != nil {
 			receivePackErr := &throwErrors{
-				err, "Receiving Packet",
+				err, "receiving Packet",
 			}
 			return receivePackErr
 		}
@@ -233,7 +233,7 @@ func (c *Client) get(args []argument) error {
 	err := c.WriteReadRequest(&buffer, args[0])
 	if err != nil {
 		getErr := &throwErrors{
-			err, "WriteRead request",
+			err, "writeRead request",
 		}
 		return getErr
 	}
@@ -241,7 +241,7 @@ func (c *Client) get(args []argument) error {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
 		openErr := &throwErrors{
-			err, "OpenFile request",
+			err, "opening file",
 		}
 		return openErr
 	}
@@ -250,7 +250,7 @@ func (c *Client) get(args []argument) error {
 	_, err = buffer.WriteTo(file)
 	if err != nil {
 		writeErr := &throwErrors{
-			err, "WriteTo request",
+			err, "writing to file",
 		}
 		return writeErr
 	}
@@ -264,7 +264,7 @@ func (c *Client) put(args []argument) error {
 
 	if err != nil {
 		openFileErr := &throwErrors{
-			err, "OpenFile request",
+			err, "opening file",
 		}
 		return openFileErr
 	}
@@ -280,7 +280,7 @@ func (c *Client) put(args []argument) error {
 
 	if err != nil {
 		getErr := &throwErrors{
-			err, "WwriteWrite Request",
+			err, "write request",
 		}
 		return getErr
 	}
@@ -344,7 +344,7 @@ func (c *Client) Handshake() error {
 		errPacket := ERRPacket(decoded)
 		return &throwErrors{
 			errors.New(errPacket.Errstring()),
-			"Error received during handshake",
+			"error packet received",
 		}
 	default:
 		return errors.New("unexpected header")
@@ -382,14 +382,14 @@ func NewClient(hostname string, port int) (*Client, error) {
 
 	if err := c.Handshake(); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("handshake failed: %v", err)
+		return nil, fmt.Errorf("handshake failed: %w", err)
 	}
 
 	return c, nil
 }
 
 func RunClientLoop(client *Client) error {
-	fmt.Println("TFTP Client started: Enter commands (e.g., 'get filename.txt', 'put filename.txt', 'quit')")
+	fmt.Println("TFTP Client Started.\nEnter commands ('get filename', 'put filename', 'quit', 'dir')")
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -398,7 +398,7 @@ func RunClientLoop(client *Client) error {
 			break
 		}
 
-		fmt.Print("client> ")
+		fmt.Print("\nclient> ")
 		if !scanner.Scan() {
 			break
 		}
@@ -488,7 +488,7 @@ func (client *Client) ExchangeKeys() error {
 		return fmt.Errorf("key exchange failed: %w", err)
 	}
 
-	fmt.Println("Key Succesfully exchanged")
+	fmt.Printf("Key Succesfully exchanged\n\n")
 	return nil
 }
 

@@ -13,7 +13,8 @@ func main() {
 
     client, err := tftp.NewClient(*host, *port)
     if err != nil {
-        log.Fatal("Error creating client:", err)
+        log.SetFlags(0)
+        log.Fatal("error creating client: ", err)
     }
     
     tftp.RunClientLoop(client)
