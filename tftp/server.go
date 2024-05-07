@@ -25,7 +25,6 @@ type Server struct {
 	ipAddress   string
 }
 
-// todo: need to send errpackets
 type ServerConnection struct {
 	server        *Server
 	conn          net.Conn
@@ -108,7 +107,6 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		serverRWQErr := &throwErrors{
 			err, "Opening File",
 		}
-		// fmt.Println(err)
 		return serverRWQErr
 	}
 	defer file.Close()
@@ -142,7 +140,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 				serverHandleDATErr := &throwErrors{
 					err, "Server handling data",
 				}
-				// fmt.Println(err)
+				s.conn.Close()
 				return serverHandleDATErr
 			}
 			d := DATPacket(decoded)
@@ -204,6 +202,7 @@ func (s *ServerConnection) Handshake() error {
 		}
 		return nil
 	default:
+		s.conn.Close()
 		return errors.New("unexpected block from handshake")
 	}
 }
@@ -312,12 +311,14 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 			if ack.Block() != blockn {
 				errs := fmt.Sprintf("Unexpected block number %d", ack.Block())
 				s.SendError(errs)
+				s.conn.Close()
 				return errors.New(errs)
 			}
 			fmt.Println("Acknowledge received for block #", blockn)
 		default:
 			errs := fmt.Sprintf("Unexpected header %s", decoded.Type().String())
 			s.SendError(errs)
+			s.conn.Close()
 			return errors.New(errs)
 		}
 		if done {
@@ -333,7 +334,6 @@ func (s *ServerConnection) NextRequest() {
 	var decoded Packet
 	var err error
 	for {
-		//May want to modularize better. Conditional handles first uncencrypted packets
 		if !s.keysExchanged {
 			buf := make([]byte, 1024)
 			n, err := s.readWriter.Read(buf)
@@ -369,9 +369,9 @@ func (s *ServerConnection) NextRequest() {
 			}
 		default:
 			fmt.Fprintf(os.Stderr, "Unexpected header %d", decoded.Type())
+			break
 		}
 	}
-
 	s.conn.Close()
 }
 
@@ -385,7 +385,6 @@ func (s *Server) Start() {
 			log.Println("Error accepting connection:", err)
 			continue
 		}
-
 		go s.handleConnection(conn, &connID)
 	}
 }

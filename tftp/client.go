@@ -57,7 +57,6 @@ func (c *Client) quit() error {
 func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 	rrq := EncodeRRQ(filename)
 
-	// may need to do something extra about this
 	err := c.SendPacket(rrq)
 	if err != nil {
 		rrqPackErr := &throwErrors{
@@ -84,10 +83,17 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 				datPackErr := &throwErrors{
 					err, "Handling data packet",
 				}
+				c.conn.Close()
 				return datPackErr
 			}
 
 			p := DATPacket(dec)
+			if p.Size() > 512{
+				c.conn.Close()
+				return &throwErrors{
+					err, "Max Block Size Exceeded",
+				}
+			}
 			err = binary.Write(w, binary.NativeEndian, p.Data())
 
 			if err != nil {
@@ -101,6 +107,7 @@ func (c *Client) WriteReadRequest(w io.Writer, filename string) error {
 			errp := ERRPacket(dec)
 			return errors.New(errp.Errstring())
 		default:
+			c.conn.Close()
 			return errors.New("unknown packet received")
 		}
 
@@ -152,6 +159,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 		case ACK:
 			ack := ACKPacket(dec)
 			if ack.Block() != ackn {
+				c.conn.Close()
 				return fmt.Errorf("unexpected block error %d", ackn)
 			}
 			fmt.Println("Acknowledge received block #", ackn)
@@ -160,6 +168,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			e := ERRPacket(dec)
 			return errors.New(e.Errstring())
 		default:
+			c.conn.Close()
 			return errors.New("unknown packet received ")
 		}
 
@@ -182,8 +191,6 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 
 		if len(dat.Data()) < 512 {
 			fmt.Println("End of data stream")
-			//THis checks for final ack
-			//Code is redudant to above so may want to modularize
 			dec, err := c.ReceivePacket()
 			if err != nil {
 				finalAckErr := &throwErrors{
@@ -195,6 +202,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 			case ACK:
 				ack := ACKPacket(dec)
 				if ack.Block() != ackn {
+					c.conn.Close()
 					return fmt.Errorf("unexpected block error %d", ackn)
 				}
 				fmt.Println("Acknowledge received block #", ackn)
@@ -203,6 +211,7 @@ func (c *Client) WriteWriteRequest(r io.Reader, filename string) error {
 				e := ERRPacket(dec)
 				return errors.New(e.Errstring())
 			default:
+				c.conn.Close()
 				return errors.New("unknown packet received ")
 			}
 			done = true
