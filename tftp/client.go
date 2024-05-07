@@ -510,8 +510,11 @@ func (c *Client) CompleteKeyExchange(publicKeyPEM []byte) error {
 
 	_, err = c.conn.Write(encryptedSymmetricKey)
 	c.encryption.sharedKey = symmetricKey
-	encryptedSymmKeyErr := &throwErrors{
-		err, "Encrypted Symmtetric Key Writing",
+	if err != nil {
+		encryptedSymmKeyErr := &throwErrors{
+			err, "Encrypted Symmtetric Key Writing",
+		}
+		return encryptedSymmKeyErr
 	}
-	return encryptedSymmKeyErr
+	return nil
 }
