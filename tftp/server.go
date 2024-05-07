@@ -375,8 +375,48 @@ func (s *ServerConnection) NextRequest() {
 	s.conn.Close()
 }
 
+func (s *Server) printAddresses() {
+    address := s.ipAddress
+    var ipPart, portPart string
+
+	if strings.HasPrefix(address, "["){
+		parts := strings.SplitN(address, "]", 2)
+		ipPart = parts[0][1:]
+		portPart = parts[1][1:]
+	}else {
+        parts := strings.Split(address, ":")
+        ipPart = parts[0]
+		portPart = parts[1]
+    }
+
+    if ipPart == "::"{
+        interfaces, _ := net.Interfaces()
+
+        fmt.Println("Server is broadcasting at the following addresses:")
+        for _, iface := range interfaces {
+            addrs, _ := iface.Addrs()
+
+            for _, addr := range addrs {
+                var ip net.IP
+                switch v := addr.(type) {
+                case *net.IPNet:
+                    ip = v.IP
+                case *net.IPAddr:
+                    ip = v.IP
+                }
+
+                if !ip.IsLoopback() {
+                    fmt.Printf("%s on port %s\n", ip.String(), portPart)
+                }
+            }
+        }
+    } else {
+        fmt.Printf("Server Listening at %s on port %s\n", ipPart, portPart)
+    }
+}
+
 func (s *Server) Start() {
-	fmt.Println("Server Listening on " + s.ipAddress)
+	s.printAddresses()
 	defer s.listener.Close()
 	connID := 1
 	for {

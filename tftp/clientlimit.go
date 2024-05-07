@@ -16,7 +16,6 @@ func (c *Clientlimit) increaseClientCount() error {
 	defer c.mu.Unlock()
 	newClientNum := c.numClients + 1
 	if newClientNum > c.maxClients {
-		//TODO real error handling
 		return errors.New("Error")
 	}
 	c.numClients = newClientNum
@@ -30,7 +29,6 @@ func (c *Clientlimit) decreaseClientCount() {
 	if newClientNum < 0 {
 		//TODO real error handling
 		panic("Current client count went under 0")
-
 	}
 	c.numClients = newClientNum
 }
