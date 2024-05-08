@@ -26,7 +26,7 @@ type RRQPacket Packet
 
 func (rrq *RRQPacket) Filename() string {
 	var ss strings.Builder
-	binary.Write(&ss, binary.BigEndian, (*rrq)[2:len(*rrq)-1])
+	binary.Write(&ss, binary.BigEndian, (*rrq)[2:])
 	filename := strings.TrimRight(ss.String(), "\x00")
 	return filename
 }
@@ -102,7 +102,7 @@ func Encode(fields []interface{}) Packet {
 func EncodeRRQ(s string) Packet {
 	d := []any{
 		RRQ,
-		s + string("\000"),
+		s,
 		EOS,
 	}
 	return Encode(d)
@@ -111,7 +111,7 @@ func EncodeRRQ(s string) Packet {
 func EncodeWRQ(s string) Packet {
 	d := []any{
 		WRQ,
-		s + string("\000"),
+		s,
 		EOS,
 	}
 
@@ -142,7 +142,7 @@ func EncodeACK(b uint32) Packet {
 func EncodeErr(s string) Packet {
 	d := []any{
 		ERR,
-		s + string("\000"),
+		s,
 		EOS,
 	}
 
