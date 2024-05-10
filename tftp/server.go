@@ -17,7 +17,6 @@ import (
 	"time"
 )
 
-
 // ========= Server Structures =========
 
 type Server struct {
@@ -36,7 +35,6 @@ type ServerConnection struct {
 	encryption    *EncryptionManager
 	keysExchanged bool
 }
-
 
 // ========= Server Initialization =========
 
@@ -115,7 +113,6 @@ func (s *Server) handleConnection(conn net.Conn, connID *int) {
 	tftpConn.NextRequest()
 }
 
-
 // ========= Server Connection Initialization =========
 
 func (s *Server) NewTFTPConnection(c net.Conn, id int) (*ServerConnection, error) {
@@ -146,7 +143,10 @@ func (s *ServerConnection) Handshake() error {
 
 	_, err := s.conn.Write(packet)
 	if err != nil {
-		return err
+		writeErr := &throwErrors{
+			err, "writing handshake",
+		}
+		return writeErr
 	}
 	fmt.Println("Handshake Dat block # 1 sent")
 
@@ -154,7 +154,10 @@ func (s *ServerConnection) Handshake() error {
 	_, err = s.readWriter.Read(buf)
 
 	if err != nil {
-		return err
+		readErr := &throwErrors{
+			err, "reading handshake",
+		}
+		return readErr
 	}
 
 	decoded := Packet(buf)
@@ -220,8 +223,6 @@ func (s *ServerConnection) NextRequest() {
 	s.conn.Close()
 }
 
-
-
 // ========= TFTP Request Handlers =========
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {
@@ -230,7 +231,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 
 	if err != nil {
 		serverRWQErr := &throwErrors{
-			err, "Opening File",
+			err, "opening file",
 		}
 		return serverRWQErr
 	}
@@ -243,7 +244,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		err := s.SendPacket(ack)
 		if err != nil {
 			serverSendPackErr := &throwErrors{
-				err, "Server Sending Packet",
+				err, "server sending packet",
 			}
 			return serverSendPackErr
 		}
@@ -253,7 +254,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 		decoded, err := s.ReceivePacket()
 		if err != nil {
 			serverReceivePackErr := &throwErrors{
-				err, "Server Receiving Packet",
+				err, "server receiving packet",
 			}
 			return serverReceivePackErr
 		}
@@ -263,7 +264,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			done, err = HandleDAT(decoded, ackn)
 			if err != nil {
 				serverHandleDATErr := &throwErrors{
-					err, "Server handling data",
+					err, "server handling data",
 				}
 				s.conn.Close()
 				return serverHandleDATErr
@@ -272,7 +273,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			err = binary.Write(file, binary.NativeEndian, d.Data())
 			if err != nil {
 				serverWriteErr := &throwErrors{
-					err, "Server writing",
+					err, "server writing",
 				}
 				return serverWriteErr
 			}
@@ -287,7 +288,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 			err := s.SendPacket(ack)
 			if err != nil {
 				serverACKWriteErr := &throwErrors{
-					err, "Server ACK and writing",
+					err, "server ACK and writing",
 				}
 				return serverACKWriteErr
 			}
@@ -304,15 +305,21 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	var buf bytes.Buffer
 
 	if len(filename) == 0 {
-		files, err := os.ReadDir(s.server.rootPath+".")
+		files, err := os.ReadDir(s.server.rootPath + ".")
 		if err != nil {
-			return err
+			readDirErr := &throwErrors{
+				err, "server reading directory",
+			}
+			return readDirErr
 		}
 
 		for _, file := range files {
 			listing, err := buildDirectoryListing(file)
 			if err != nil {
-				return err
+				buildDirErr := &throwErrors{
+					err, "server building directory",
+				}
+				return buildDirErr
 			}
 			buf.WriteString(listing)
 			buf.WriteByte('\n')
@@ -341,7 +348,10 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 		err = s.SendPacket(Packet(next))
 
 		if err != nil {
-			return err
+			sendPackErr := &throwErrors{
+				err, "sending packet",
+			}
+			return sendPackErr
 		}
 		fmt.Println("Sending Data block #", blockn)
 
@@ -350,7 +360,10 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 		}
 		decoded, err := s.ReceivePacket()
 		if err != nil {
-			return err
+			receivePackErr := &throwErrors{
+				err, "receiving packet",
+			}
+			return receivePackErr
 		}
 
 		switch decoded.Type() {
@@ -379,17 +392,22 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	return nil
 }
 
-
-// ========= Send / Recieve Functions =========
+// ========= Send / Receive Functions =========
 
 func (s *ServerConnection) SendPacket(packet Packet) error {
 	encryptedPacket, err := encryptPacket(packet, s.encryption.sharedKey)
 	if err != nil {
-		return err
+		encryptPackErr := &throwErrors{
+			err, "encrypting packet",
+		}
+		return encryptPackErr
 	}
 	_, err = s.conn.Write(encryptedPacket)
 	if err != nil {
-		return err
+		sendPackErr := &throwErrors{
+			err, "sending packet",
+		}
+		return sendPackErr
 	}
 	return nil
 }
@@ -398,15 +416,20 @@ func (s *ServerConnection) ReceivePacket() (Packet, error) {
 	buf := make([]byte, 1024)
 	n, err := s.readWriter.Read(buf)
 	if err != nil {
-		return nil, err
+		readPackErr := &throwErrors{
+			err, "reading packet",
+		}
+		return nil, readPackErr
 	}
 	packet, err := decryptPacket(buf[:n], s.encryption.sharedKey)
 	if err != nil {
-		return nil, err
+		decryptPackErr := &throwErrors{
+			err, "decrypting packet",
+		}
+		return nil, decryptPackErr
 	}
 	return Packet(packet), nil
 }
-
 
 func (s *ServerConnection) SendError(str string) error {
 	errp := EncodeErr(str)
@@ -417,10 +440,9 @@ func (s *ServerConnection) SendError(str string) error {
 	return nil
 }
 
-
 // ========= Utility Functions =========
 
-//Used in ReadReadRequest
+// Used in ReadReadRequest
 func buildDirectoryListing(file os.DirEntry) (string, error) {
 	var builder strings.Builder
 
@@ -439,45 +461,45 @@ func buildDirectoryListing(file os.DirEntry) (string, error) {
 	return builder.String(), nil
 }
 
-//Used in server.Start()
+// Used in server.Start()
 func (s *Server) printAddresses() {
-    address := s.ipAddress
-    var ipPart, portPart string
+	address := s.ipAddress
+	var ipPart, portPart string
 
-	if strings.HasPrefix(address, "["){
+	if strings.HasPrefix(address, "[") {
 		parts := strings.SplitN(address, "]", 2)
 		ipPart = parts[0][1:]
 		portPart = parts[1][1:]
-	}else {
-        parts := strings.Split(address, ":")
-        ipPart = parts[0]
+	} else {
+		parts := strings.Split(address, ":")
+		ipPart = parts[0]
 		portPart = parts[1]
-    }
+	}
 
-    if ipPart == "::"{
-        interfaces, _ := net.Interfaces()
+	if ipPart == "::" {
+		interfaces, _ := net.Interfaces()
 
-        fmt.Println("Server is broadcasting at the following addresses:")
-        for _, iface := range interfaces {
-            addrs, _ := iface.Addrs()
+		fmt.Println("Server is broadcasting at the following addresses:")
+		for _, iface := range interfaces {
+			addrs, _ := iface.Addrs()
 
-            for _, addr := range addrs {
-                var ip net.IP
-                switch v := addr.(type) {
-                case *net.IPNet:
-                    ip = v.IP
-                case *net.IPAddr:
-                    ip = v.IP
-                }
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
 
-                if !ip.IsLoopback() {
-                    fmt.Printf("%s on port %s\n", ip.String(), portPart)
-                }
-            }
-        }
-    } else {
-        fmt.Printf("Server Listening at %s on port %s\n", ipPart, portPart)
-    }
+				if !ip.IsLoopback() {
+					fmt.Printf("%s on port %s\n", ip.String(), portPart)
+				}
+			}
+		}
+	} else {
+		fmt.Printf("Server Listening at %s on port %s\n", ipPart, portPart)
+	}
 	fmt.Println()
 }
 
@@ -527,12 +549,18 @@ func (s *ServerConnection) CompleteKeyExchange() error {
 	encryptedSymmetricKey := make([]byte, 256)
 	n, err := s.readWriter.Read(encryptedSymmetricKey)
 	if err != nil {
-		return err
+		rsaEncyptErr := &throwErrors{
+			err, "encrypting key",
+		}
+		return rsaEncyptErr
 	}
 
 	symmetricKey, err := rsaDecrypt(s.encryption.privateKey, encryptedSymmetricKey[:n])
 	if err != nil {
-		return err
+		rsaDeCryptErr := &throwErrors{
+			err, "decrypting key",
+		}
+		return rsaDeCryptErr
 	}
 
 	s.encryption.sharedKey = symmetricKey
