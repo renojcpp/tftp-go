@@ -226,7 +226,7 @@ func (s *ServerConnection) NextRequest() {
 // ========= TFTP Request Handlers =========
 
 func (s *ServerConnection) ReadWriteRequest(filename string) error {
-	fmt.Println("Processing read request")
+	fmt.Println("Processing write request")
 	file, err := os.OpenFile(s.server.rootPath+filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 
 	if err != nil {
