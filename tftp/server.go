@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -186,18 +185,14 @@ func (s *ServerConnection) NextRequest() {
 			buf := make([]byte, 1024)
 			n, err := s.readWriter.Read(buf)
 			if err != nil {
-				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
-				}
+				fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
 				break
 			}
 			decoded = Packet(buf[:n])
 		} else {
 			decoded, err = s.ReceivePacket()
 			if err != nil {
-				if err == io.EOF {
-					fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
-				}
+				fmt.Fprintf(os.Stdout, "Connection closed. ID: %d\n", s.id)
 				break
 			}
 		}
