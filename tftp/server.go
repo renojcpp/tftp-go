@@ -305,7 +305,13 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 	var buf bytes.Buffer
 
 	if len(filename) == 0 {
-		files, err := os.ReadDir(s.server.rootPath + ".")
+		var path string
+		if(s.server.rootPath == ""){
+			path = "."
+		}else{
+			path = s.server.rootPath
+		}
+		files, err := os.ReadDir(path)
 		if err != nil {
 			readDirErr := &throwErrors{
 				err, "server reading directory",
@@ -314,7 +320,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 		}
 
 		for _, file := range files {
-			listing, err := buildDirectoryListing(file)
+			listing, err := buildDirectoryListing(file, s.server.rootPath)
 			if err != nil {
 				buildDirErr := &throwErrors{
 					err, "server building directory",
@@ -443,10 +449,10 @@ func (s *ServerConnection) SendError(str string) error {
 // ========= Utility Functions =========
 
 // Used in ReadReadRequest
-func buildDirectoryListing(file os.DirEntry) (string, error) {
+func buildDirectoryListing(file os.DirEntry, rootPath string) (string, error) {
 	var builder strings.Builder
 
-	info, err := os.Stat(file.Name())
+	info, err := os.Stat(rootPath + file.Name())
 	if err != nil {
 		fmt.Println("Error accessing file:", err)
 		return "", err
