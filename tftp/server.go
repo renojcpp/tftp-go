@@ -293,7 +293,7 @@ func (s *ServerConnection) ReadWriteRequest(filename string) error {
 				return serverACKWriteErr
 			}
 			fmt.Println("Sending Acknowledgment block #", ackn)
-			fmt.Println("Write request fulfilled. End of data stream.")
+			fmt.Println("Write request fulfilled. End of data stream.\n")
 		}
 	}
 
@@ -390,7 +390,7 @@ func (s *ServerConnection) ReadReadRequest(filename string) error {
 			return errors.New(errs)
 		}
 		if done {
-			fmt.Println("Read Request fulfilled. End of data stream.")
+			fmt.Println("Read Request fulfilled. End of data stream.\n")
 		}
 		blockn++
 	}
